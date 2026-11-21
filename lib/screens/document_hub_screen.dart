@@ -226,7 +226,7 @@ class _DocumentHubScreenState extends State<DocumentHubScreen> {
           <Map<String, String>>[];
 
       final generatedPath = await const MethodChannel(
-        'com.example.exam_secret_codes/document_pdf',
+        'com.luqman.atmath_exams/document_pdf',
       ).invokeMethod<String>('createStudentPdf', {
         'sourcePath': sourcePath,
         'outputPath': outputPath,
