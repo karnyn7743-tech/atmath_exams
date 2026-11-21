@@ -60,28 +60,7 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
 
-            <!-- 1. فتح ملفات .exam عند النقر عليها في مدير الملفات أو الواتساب وتيليجرام -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="file" />
-                <data android:scheme="content" />
-                <data android:mimeType="*/*" />
-                <data android:pathPattern=".*\\.exam" />
-                <data android:pathPattern=".*\\..*\\.exam" />
-                <data android:pathPattern=".*\\..*\\..*\\.exam" />
-                <data android:host="*" />
-            </intent-filter>
-
-            <!-- 2. استقبال ملفات .exam عبر قائمة "مشاركة إلى" -->
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="*/*" />
-            </intent-filter>
-
-        </activity>
+            </activity>
         
         <meta-data
             android:name="flutterEmbedding"
