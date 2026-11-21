@@ -1,159 +1,194 @@
-import 'dart:convert';
 import 'dart:io';
+import 'dart:convert';
+
 import 'package:crypto/crypto.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-enum LicenseStatus { locked, trial, full }
+enum LicenseStatus { locked, trial, full, trialAlreadyUsed }
 
 class ActivationService {
-  static const String _secretSalt = 'EXAM_MAKER_SECURE_SALT_2026_@ALBAETHEE';
-  static const String _prefLicenseStatus = 'license_status';
-  static const String _prefKeyActivationCode = 'app_activation_code';
-  static const String _prefTrialExamsCount = 'trial_exams_created_count';
-  static const String _prefTrialStartDate = 'trial_start_timestamp'; // تسجيل بداية التجربة
-  static const int trialDaysDuration = 30; // مدة التجربة: 30 يوماً (شهر كامل)
+  // يجب أن تبقى القيم والخوارزمية مطابقة لتطبيق المولّد.
+  static const String _secretSaltPermanent = 'STUGRA_SCAN_SECRET_KEY_2026';
+  static const String _secretSaltTrial = 'STUGRA_TRIAL_KEY_2026';
 
-  /// استخراج المعرف الفريد للجهاز
+  // مفاتيح التخزين مطابقة لتطبيق إجزامس أوتوميشن.
+  static const String _prefIsActivated = 'is_activated';
+  static const String _prefIsTrial = 'is_trial';
+  static const String _prefActivationCode = 'activation_code';
+  static const String _prefTrialUsedBefore = 'trial_used_before';
+  static const String _prefTrialStartTime = 'trial_start_time';
+  static const String _prefTrialLastCheckTime = 'trial_last_check_time';
+  static const String _prefTrialExamsCount = 'trial_exams_created_count';
+
+  // المدة الحالية 24 ساعة كما في التطبيق الأصلي.
+  // سنحدد المدة النهائية لاحقاً بصورة مستقلة.
+  static const int trialDurationMilliseconds = 24 * 60 * 60 * 1000;
+
+  /// استخراج معرّف الجهاز بالطريقة نفسها المستخدمة في تطبيق المولّد.
   static Future<String> getDeviceId() async {
     final deviceInfo = DeviceInfoPlugin();
-    String rawId = 'UNKNOWN_DEVICE';
 
-    try {
-      if (Platform.isAndroid) {
-        final androidInfo = await deviceInfo.androidInfo;
-        rawId = androidInfo.id.isNotEmpty
-            ? androidInfo.id
-            : '${androidInfo.brand}_${androidInfo.model}_${androidInfo.fingerprint}';
-      } else if (Platform.isWindows) {
-        final windowsInfo = await deviceInfo.windowsInfo;
-        rawId = windowsInfo.deviceId;
-      }
-    } catch (_) {
-      rawId = 'FALLBACK_EXAM_DEVICE';
+    if (Platform.isAndroid) {
+      final androidInfo = await deviceInfo.androidInfo;
+      return androidInfo.id;
+    } else if (Platform.isIOS) {
+      final iosInfo = await deviceInfo.iosInfo;
+      return iosInfo.identifierForVendor ?? 'UNKNOWN_DEVICE';
     }
 
-    final hash = sha256.convert(utf8.encode(rawId)).toString().toUpperCase();
-    return '${hash.substring(0, 4)}-${hash.substring(4, 8)}-${hash.substring(8, 12)}';
+    return 'UNKNOWN_DEVICE';
   }
 
-  /// خوارزمية التحقق من المفتاح وتحديد نوعه
+  /// توليد مفتاح الترخيص الدائم بنفس خوارزمية المولّد.
+  static String generatePermanentCode(String deviceId) {
+    final bytes = utf8.encode(deviceId + _secretSaltPermanent);
+    final digest = sha256.convert(bytes).toString().toUpperCase();
+    final part1 = digest.substring(0, 4);
+    final part2 = digest.substring(4, 8);
+    return 'STUG-$part1-$part2';
+  }
+
+  /// توليد مفتاح التجربة بنفس خوارزمية المولّد.
+  static String generateTrialCode(String deviceId) {
+    final bytes = utf8.encode(deviceId + _secretSaltTrial);
+    final digest = sha256.convert(bytes).toString().toUpperCase();
+    final part1 = digest.substring(0, 4);
+    final part2 = digest.substring(4, 8);
+    return 'TRIAL-$part1-$part2';
+  }
+
+  /// تحديد نوع المفتاح المدخل للجهاز الحالي.
   static LicenseStatus verifyKey(String enteredKey, String deviceId) {
-    final cleanDevice = deviceId.replaceAll('-', '').trim().toUpperCase();
-    final cleanKey = enteredKey.trim().toUpperCase();
+    final cleanCode = enteredKey.trim().toUpperCase();
 
-    // 1. فحص المفتاح الكامل الدائم
-    final fullCombined = '$cleanDevice:FULL:$_secretSalt';
-    final fullHash = sha256.convert(utf8.encode(fullCombined)).toString().toUpperCase();
-    final expectedFullKey = 'FL-${fullHash.substring(0, 4)}-${fullHash.substring(4, 8)}-${fullHash.substring(8, 12)}';
-
-    if (cleanKey == expectedFullKey) {
+    if (cleanCode == generatePermanentCode(deviceId)) {
       return LicenseStatus.full;
     }
 
-    // 2. فحص كود التجربة المصرح به
-    final trialCombined = '$cleanDevice:TRIAL:$_secretSalt';
-    final trialHash = sha256.convert(utf8.encode(trialCombined)).toString().toUpperCase();
-    final expectedTrialKey = 'TR-${trialHash.substring(0, 4)}-${trialHash.substring(4, 8)}-${trialHash.substring(8, 12)}';
-
-    if (cleanKey == expectedTrialKey) {
+    if (cleanCode == generateTrialCode(deviceId)) {
       return LicenseStatus.trial;
     }
 
     return LicenseStatus.locked;
   }
 
-  /// فحص هل التطبيق مفعل تفعيلاً كاملاً
+  /// فحص صلاحية التشغيل الحالية، مع حماية ساعة الهاتف كما في الأصل.
   static Future<bool> isActivated() async {
-    final status = await getLicenseStatus();
-    return status == LicenseStatus.full;
+    final prefs = await SharedPreferences.getInstance();
+    final activated = prefs.getBool(_prefIsActivated) ?? false;
+    if (!activated) return false;
+
+    final isTrial = prefs.getBool(_prefIsTrial) ?? false;
+    final savedCode = prefs.getString(_prefActivationCode);
+    final deviceId = await getDeviceId();
+
+    if (!isTrial) {
+      return savedCode == generatePermanentCode(deviceId);
+    }
+
+    final expectedTrial = generateTrialCode(deviceId);
+    if (savedCode != expectedTrial) {
+      await _expireTrial(prefs);
+      return false;
+    }
+
+    final startTime = prefs.getInt(_prefTrialStartTime);
+    final lastCheckTime = prefs.getInt(_prefTrialLastCheckTime);
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    if (startTime == null || lastCheckTime == null || now < lastCheckTime) {
+      await _expireTrial(prefs);
+      return false;
+    }
+
+    if (now - startTime > trialDurationMilliseconds) {
+      await _expireTrial(prefs);
+      return false;
+    }
+
+    await prefs.setInt(_prefTrialLastCheckTime, now);
+    return true;
   }
 
-  /// جلب عدد الاختبارات المنشأة أثناء الفترة التجريبية
+  /// حالة الترخيص التي تستخدمها نقطة تشغيل التطبيق.
+  static Future<LicenseStatus> getLicenseStatus() async {
+    final active = await isActivated();
+    if (!active) return LicenseStatus.locked;
+
+    final prefs = await SharedPreferences.getInstance();
+    final isTrial = prefs.getBool(_prefIsTrial) ?? false;
+    return isTrial ? LicenseStatus.trial : LicenseStatus.full;
+  }
+
+  /// فحص هل التطبيق مفعل تفعيلاً كاملاً.
+  static Future<bool> isFullyActivated() async {
+    return (await getLicenseStatus()) == LicenseStatus.full;
+  }
+
+  /// الإبقاء على الواجهة الحالية التي تعرض الأيام المتبقية.
+  /// مدة الـ24 ساعة تظهر يوماً واحداً ما دامت التجربة سارية.
+  static Future<int> getRemainingTrialDays() async {
+    final status = await getLicenseStatus();
+    if (status == LicenseStatus.full) return 999;
+    if (status != LicenseStatus.trial) return 0;
+
+    final prefs = await SharedPreferences.getInstance();
+    final startTime = prefs.getInt(_prefTrialStartTime);
+    if (startTime == null) return 1;
+
+    final elapsed = DateTime.now().millisecondsSinceEpoch - startTime;
+    return elapsed < trialDurationMilliseconds ? 1 : 0;
+  }
+
   static Future<int> getTrialCreatedCount() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getInt(_prefTrialExamsCount) ?? 0;
   }
 
-  /// حساب عدد الأيام المتبقية في الفترة التجريبية (30 يوماً)
-  static Future<int> getRemainingTrialDays() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedKey = prefs.getString(_prefKeyActivationCode);
-    if (savedKey == null || savedKey.isEmpty) return 0;
-
-    final currentDeviceId = await getDeviceId();
-    final status = verifyKey(savedKey, currentDeviceId);
-
-    if (status == LicenseStatus.full) return 999; // ترخيص كامل دائم
-
-    if (status == LicenseStatus.trial) {
-      final startMillis = prefs.getInt(_prefTrialStartDate);
-      if (startMillis == null) return trialDaysDuration;
-
-      final startDate = DateTime.fromMillisecondsSinceEpoch(startMillis);
-      final daysPassed = DateTime.now().difference(startDate).inDays;
-      final remaining = trialDaysDuration - daysPassed;
-      return remaining > 0 ? remaining : 0;
-    }
-
-    return 0;
-  }
-
-  /// التحقق من حالة الترخيص الحالية (فحص انقضاء مدة الـ 30 يوماً للتجربة)
-  static Future<LicenseStatus> getLicenseStatus() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedKey = prefs.getString(_prefKeyActivationCode);
-    if (savedKey == null || savedKey.isEmpty) return LicenseStatus.locked;
-
-    final currentDeviceId = await getDeviceId();
-    final status = verifyKey(savedKey, currentDeviceId);
-
-    // إذا كان الترخيص تجريبياً، يتم فحص هل انتهت مدة الشهر (30 يوماً)
-    if (status == LicenseStatus.trial) {
-      int? startMillis = prefs.getInt(_prefTrialStartDate);
-      final now = DateTime.now();
-
-      if (startMillis == null) {
-        // تسجيل بداية التجربة عند أول فحص للترخيص التجريبي
-        await prefs.setInt(_prefTrialStartDate, now.millisecondsSinceEpoch);
-        return LicenseStatus.trial;
-      }
-
-      final startDate = DateTime.fromMillisecondsSinceEpoch(startMillis);
-      final daysPassed = now.difference(startDate).inDays;
-
-      // إذا تجاوزت المدة 30 يوماً، يقفل التطبيق
-      if (daysPassed >= trialDaysDuration) {
-        return LicenseStatus.locked;
-      }
-    }
-
-    return status;
-  }
-
-  /// تسجيل استهلاك الاختبار التجريبي (لأغراض الإحصاء ومتابعة المعلم دون قفل التطبيق)
   static Future<void> incrementTrialCount() async {
     final prefs = await SharedPreferences.getInstance();
     final current = prefs.getInt(_prefTrialExamsCount) ?? 0;
     await prefs.setInt(_prefTrialExamsCount, current + 1);
   }
 
-  /// تفعيل المفتاح المدخل وبدء عداد الـ 30 يوماً في حال كان المفتاح تجريبياً
+  /// حفظ المفتاح والتحقق منه، مع منع إعادة استخدام التجربة على الجهاز
+  /// ما دامت بيانات التطبيق المحلية باقية، وفق آلية التطبيق الأصلي.
   static Future<LicenseStatus> applyKey(String enteredKey) async {
-    final currentDeviceId = await getDeviceId();
-    final status = verifyKey(enteredKey, currentDeviceId);
+    final cleanCode = enteredKey.trim().toUpperCase();
+    final deviceId = await getDeviceId();
+    final status = verifyKey(cleanCode, deviceId);
+    final prefs = await SharedPreferences.getInstance();
 
-    if (status != LicenseStatus.locked) {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_prefKeyActivationCode, enteredKey.trim().toUpperCase());
-      await prefs.setString(_prefLicenseStatus, status == LicenseStatus.full ? 'full' : 'trial');
-
-      // عند إدخال مفتاح تجريبي، نسجل لحظة البداية لبدء حساب الـ 30 يوماً
-      if (status == LicenseStatus.trial) {
-        await prefs.setInt(_prefTrialStartDate, DateTime.now().millisecondsSinceEpoch);
-      }
+    if (status == LicenseStatus.full) {
+      await prefs.setBool(_prefIsActivated, true);
+      await prefs.setBool(_prefIsTrial, false);
+      await prefs.setString(_prefActivationCode, cleanCode);
+      return LicenseStatus.full;
     }
 
-    return status;
+    if (status == LicenseStatus.trial) {
+      final trialUsedBefore =
+          prefs.getBool(_prefTrialUsedBefore) ?? false;
+      if (trialUsedBefore) {
+        return LicenseStatus.trialAlreadyUsed;
+      }
+
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await prefs.setBool(_prefIsActivated, true);
+      await prefs.setBool(_prefIsTrial, true);
+      await prefs.setBool(_prefTrialUsedBefore, true);
+      await prefs.setString(_prefActivationCode, cleanCode);
+      await prefs.setInt(_prefTrialStartTime, now);
+      await prefs.setInt(_prefTrialLastCheckTime, now);
+      return LicenseStatus.trial;
+    }
+
+    return LicenseStatus.locked;
+  }
+
+  static Future<void> _expireTrial(SharedPreferences prefs) async {
+    await prefs.setBool(_prefIsActivated, false);
+    await prefs.remove(_prefActivationCode);
   }
 }
