@@ -95,7 +95,7 @@ class MainActivity : FlutterActivity() {
                 val layerUtility = LayerUtility(output)
                 val font = PDType0Font.load(
                     output,
-                    assets.open("flutter_assets/assets/fonts/Amiri-Regular.ttf")
+                    assets.open("flutter_assets/assets/fonts/Arial.ttf")
                 )
                 // Import each original PDF page once, then reuse its vector form for every student.
                 val sourceForms = (0 until source.numberOfPages).map { pageIndex ->
