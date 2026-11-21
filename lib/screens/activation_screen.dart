@@ -70,7 +70,7 @@ class _ActivationScreenState extends State<ActivationScreen> {
     } else if (status == LicenseStatus.trial) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('تم تفعيل النسخة التجريبية بنجاح (صالحة لمدة شهر كامل - 30 يوماً).'),
+          content: Text('تم تفعيل النسخة التجريبية بنجاح لمدة 24 ساعة.'),
           backgroundColor: Color(0xFF0F766E),
         ),
       );
@@ -81,6 +81,10 @@ class _ActivationScreenState extends State<ActivationScreen> {
             MaterialPageRoute(builder: (_) => const HomeScreen()),
           );
         }
+      });
+    } else if (status == LicenseStatus.trialAlreadyUsed) {
+      setState(() {
+        _errorMessage = 'لقد استُنفدت فترة التجربة لهذا الجهاز سابقاً. يرجى إدخال مفتاح التفعيل الدائم.';
       });
     } else {
       setState(() {
@@ -204,8 +208,8 @@ class _ActivationScreenState extends State<ActivationScreen> {
                     textAlign: TextAlign.center,
                     style: const TextStyle(letterSpacing: 1.5, fontWeight: FontWeight.bold),
                     decoration: InputDecoration(
-                      labelText: 'أدخل مفتاح التنشيط أو كود التجربة',
-                      hintText: 'TR-XXXX-XXXX-XXXX أو FL-XXXX-...',
+                      labelText: 'أدخل مفتاح التفعيل الدائم أو التجريبي',
+                      hintText: 'STUG-XXXX-YYYY أو TRIAL-XXXX-YYYY',
                       errorText: _errorMessage,
                       border: const OutlineInputBorder(),
                       prefixIcon: const Icon(Icons.key, color: Color(0xFF1E3A8A)),
