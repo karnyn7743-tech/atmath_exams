@@ -69,13 +69,13 @@ class _ActivationScreenState extends State<ActivationScreen> {
       });
     } else if (status == LicenseStatus.trial) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
             key.startsWith('TRIAL2.')
                 ? 'تم تفعيل النسخة التجريبية بنجاح لمدة 10 أيام.'
                 : 'تم تفعيل النسخة التجريبية بنجاح لمدة 24 ساعة.',
           ),
-          backgroundColor: Color(0xFF0F766E),
+          backgroundColor: const Color(0xFF0F766E),
         ),
       );
       await _requestPermissionsStepByStep(() {
