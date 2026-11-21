@@ -1,5 +1,5 @@
-name: exam_maker_app
-description: "تطبيق صانع ومحرر الاختبارات المدرسية المؤتمتة والشاملة - إعداد وتطوير أ. فواز سنان البعيثي"
+name: atmath_exams
+description: "تطبيق أتمتة الإختبارات - إعداد وتطوير أ. فواز سنان البعيثي"
 publish_to: "none"
 
 version: 1.0.4+6
@@ -55,145 +55,15 @@ flutter:
     - assets/fonts/
 
   fonts:
-    # 1. الخطوط الأساسية والقرآنية والزخرفية
+  
     - family: Amiri
       fonts:
         - asset: assets/fonts/Amiri-Regular.ttf
 
-    - family: Hafs
-      fonts:
-        - asset: assets/fonts/hafs_v22.ttf
-
-    - family: Thuluth
-      fonts:
-        - asset: assets/fonts/Thuluth.ttf
-
-    - family: Almarai
-      fonts:
-        - asset: assets/fonts/Almarai.ttf
-
-    - family: Changa
-      fonts:
-        - asset: assets/fonts/Changa.ttf
-
-    - family: Kufam
-      fonts:
-        - asset: assets/fonts/Kufam.ttf
-
-    - family: Rubik
-      fonts:
-        - asset: assets/fonts/Rubik-Medium.ttf
-      
     - family: Arial
       fonts:
         - asset: assets/fonts/Arial.ttf
           weight: 400
         - asset: assets/fonts/Arial-bold.ttf
           weight: 700
-
-    # 2. خطوط العناوين والزخارف الإسلامية
-    - family: ElHijaz
-      fonts:
-        - asset: assets/fonts/ElHijaz-Normal.ttf
-
-    - family: ElSHijazAdorn
-      fonts:
-        - asset: assets/fonts/ElS-Hijaz-Adorn.ttf
-
-    - family: ElourQuraaKufi
-      fonts:
-        - asset: assets/fonts/Elour-Quraa-Kufi.ttf
-
-    - family: ElghAnSrame
-      fonts:
-        - asset: assets/fonts/Elgh-an-Srame.ttf
-
-    - family: ElAfrica
-      fonts:
-        - asset: assets/fonts/ElAfrica-V2.ttf
-
-    - family: SultanCtangle
-      fonts:
-        - asset: assets/fonts/Sultan-ctangle.ttf
-
-    - family: Tahrir
-      fonts:
-        - asset: assets/fonts/Tahrir-mob3.ttf
-
-    - family: DTUTH
-      fonts:
-        - asset: assets/fonts/DTUTH-II-1.ttf
-
-    - family: Lishposter
-      fonts:
-        - asset: assets/fonts/Lishposter.ttf
-
-    - family: Axdf
-      fonts:
-        - asset: assets/fonts/Axdf.ttf
-
-    - family: Banyeh
-      fonts:
-        - asset: assets/fonts/Banyeh.ttf
-
-    - family: Meshref
-      fonts:
-        - asset: assets/fonts/meshref.ttf
-
-    - family: Minder
-      fonts:
-        - asset: assets/fonts/minder.ttf
-
-    - family: Mobv2
-      fonts:
-        - asset: assets/fonts/mobv2-regular.ttf
-
-    - family: GSoon
-      fonts:
-        - asset: assets/fonts/gSoon-Regular.ttf
-
-    - family: DeApple
-      fonts:
-        - asset: assets/fonts/deApple-Regular.ttf
-
-    # 3. خط الرموز والمعادلات الرياضية
-    - family: JsMath
-      fonts:
-        - asset: assets/fonts/jsMath-cmbx10.ttf
-
-    # 4. خطوط إنجليزية ومتنوعة
-    - family: Satisfy
-      fonts:
-        - asset: assets/fonts/Satisfy-Regular.ttf
-
-    - family: Schoolbell
-      fonts:
-        - asset: assets/fonts/Schoolbell-Regular.ttf
-
-    - family: Caps
-      fonts:
-        - asset: assets/fonts/Caps-Regular.ttf
-
-    - family: Chewy
-      fonts:
-        - asset: assets/fonts/Chewy-Regular.ttf
-
-    - family: Crushed
-      fonts:
-        - asset: assets/fonts/Crushed-Regular.ttf
-
-    - family: Girls
-      fonts:
-        - asset: assets/fonts/Girls-Regular.ttf
-
-    - family: Grover
-      fonts:
-        - asset: assets/fonts/Grover-Regular.ttf
-
-    - family: RSwanky
-      fonts:
-        - asset: assets/fonts/rSwanky-Regular.ttf
-
-    - family: SMono
-      fonts:
-        - asset: assets/fonts/sMono.ttf
+          
