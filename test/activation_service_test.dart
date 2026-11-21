@@ -18,7 +18,7 @@ void main() {
   });
 
   test('rejects a token with a modified payload', () async {
-    final altered = validToken.replaceFirst('VEVSSUZZ', 'VEVSSUZY');
+    final altered = validToken.replaceFirst('eyJ2Ijox', 'eyJ2Ijoy');
     expect(
       await ActivationService.verifyTrial2Token(
         altered,
