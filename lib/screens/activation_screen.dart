@@ -70,7 +70,11 @@ class _ActivationScreenState extends State<ActivationScreen> {
     } else if (status == LicenseStatus.trial) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('تم تفعيل النسخة التجريبية بنجاح لمدة 24 ساعة.'),
+          content: Text(
+            key.startsWith('TRIAL2.')
+                ? 'تم تفعيل النسخة التجريبية بنجاح لمدة 10 أيام.'
+                : 'تم تفعيل النسخة التجريبية بنجاح لمدة 24 ساعة.',
+          ),
           backgroundColor: Color(0xFF0F766E),
         ),
       );
@@ -208,8 +212,8 @@ class _ActivationScreenState extends State<ActivationScreen> {
                     textAlign: TextAlign.center,
                     style: const TextStyle(letterSpacing: 1.5, fontWeight: FontWeight.bold),
                     decoration: InputDecoration(
-                      labelText: 'أدخل مفتاح التفعيل الدائم أو التجريبي',
-                      hintText: 'STUG-XXXX-YYYY أو TRIAL-XXXX-YYYY',
+                      labelText: 'أدخل مفتاح التفعيل الدائم أو التجريبي (TRIAL2)',
+                      hintText: 'STUG-XXXX-YYYY أو TRIAL-XXXX-YYYY أو TRIAL2',
                       errorText: _errorMessage,
                       border: const OutlineInputBorder(),
                       prefixIcon: const Icon(Icons.key, color: Color(0xFF1E3A8A)),
