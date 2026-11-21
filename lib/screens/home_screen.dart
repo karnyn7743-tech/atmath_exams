@@ -1227,7 +1227,7 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: const Color(0xFFF2F0E7),
       appBar: AppBar(
         title: const Text(
-          'المحرر البسيط للإختبارات والأتمتة',
+          'أتمتة الإختبارات الشهرية والنهائية',
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 17,
