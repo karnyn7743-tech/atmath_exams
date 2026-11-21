@@ -1,6 +1,9 @@
 name: Refresh Flutter Lockfile and Check Gradle
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
