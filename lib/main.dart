@@ -3,7 +3,6 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'screens/activation_screen.dart';
 import 'screens/home_screen.dart';
 import 'services/activation_service.dart';
-import 'services/exam_storage_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
