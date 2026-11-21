@@ -1,4 +1,4 @@
-name: Build Exam Secret Codes APK
+name: Build atmath exams APK
 
 on:
   workflow_dispatch:
@@ -20,7 +20,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: exam-secret-codes-android-${{ github.ref }}
+  group: atmath-exams-android-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -51,7 +51,7 @@ jobs:
         run: |
           test -n "$ANDROID_KEYSTORE_BASE64" || { echo "Missing ANDROID_KEYSTORE_BASE64 secret"; exit 1; }
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/exam-secret-codes-release.jks
-          test -s android/app/exam-secret-codes-release.jks
+          test -s android/app/atmath-exams-release.jks
 
       - name: Show Flutter version
         run: flutter --version
@@ -76,7 +76,7 @@ jobs:
         shell: bash
         run: |
           SOURCE_APK="build/app/outputs/flutter-apk/app-release.apk"
-          TARGET_APK="build/app/outputs/flutter-apk/دق الأرقام السرية.apk"
+          TARGET_APK="build/app/outputs/flutter-apk/كنترول الأتمتة.apk"
           test -s "$SOURCE_APK"
           mv "$SOURCE_APK" "$TARGET_APK"
           test -s "$TARGET_APK"
@@ -85,7 +85,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: exam-secret-codes-android-apk
-          path: build/app/outputs/flutter-apk/دق الأرقام السرية.apk
+          name: atmath-exams-android-apk
+          path: build/app/outputs/flutter-apk/كنترول الأتمتة.apk
           if-no-files-found: error
           retention-days: 30
