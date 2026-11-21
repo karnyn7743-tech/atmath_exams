@@ -8,11 +8,6 @@ import 'services/exam_storage_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // إنشاء وتجهيز مجلد [المحرر البسيط] في وحدة التخزين بمجرد تثبيت وتشغيل التطبيق
-  try {
-    await ExamStorageService.ensureAppFolderExists();
-  } catch (_) {}
-
   // فحص حالة الترخيص: لا يمكن الدخول إلا بترخيص ساري (تجريبي أو دائم)
   final status = await ActivationService.getLicenseStatus();
   final bool isAllowed = (status == LicenseStatus.full || status == LicenseStatus.trial);
@@ -31,7 +26,7 @@ class ExamMakerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'المحرر البسيط للاختبارات',
+      title: 'أتمتة الإخنبارات',
       debugShowCheckedModeBanner: false,
       locale: const Locale('ar', 'YE'),
       supportedLocales: const [
