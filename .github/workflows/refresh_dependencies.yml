@@ -1,0 +1,58 @@
+name: Refresh Flutter Lockfile and Check Gradle
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-and-check:
+    if: github.event_name == 'workflow_dispatch' || github.event.head_commit.message != 'chore: refresh pubspec lock'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter 3.50.1
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.50.1'
+          channel: stable
+          cache: true
+
+      - name: Resolve Dart and Flutter dependencies
+        run: flutter pub get
+
+      - name: Commit refreshed lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pubspec.lock
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: refresh pubspec lock"
+            git push
+          else
+            echo "pubspec.lock is already up to date."
+          fi
+
+      - name: Verify Android Gradle configuration
+        working-directory: android
+        run: ./gradlew help --no-daemon
+
+      - name: Remove temporary maintenance workflow
+        if: success()
+        run: |
+          git rm .github/workflows/refresh_dependencies.yml
+          git commit -m "chore: remove temporary dependency refresh workflow"
+          git push
