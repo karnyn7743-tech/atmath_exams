@@ -1,4 +1,4 @@
-package com.fawaz.exam_maker_app
+package com.luqman.atmath_exams
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -28,7 +28,7 @@ import java.io.File
 import java.io.FileInputStream
 
 class MainActivity : FlutterActivity() {
-    private val channelName = "com.fawaz.exam_maker_app/document_pdf"
+    private val channelName = "com.luqman.atmath_exams/document_pdf"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
