@@ -742,7 +742,7 @@ Map<String, dynamic> _fetchGradesIsolate(Map<String, dynamic> args) {
   final String targetPath = args['targetPath'];
   final String sourcePath = args['sourcePath'];
   final String subjectName = args['subjectName'].toString().trim();
-  final String mahsalaType = args['mahsalaType'].toString().trim();
+  final String semesterName = args['semesterName'].toString().trim();
 
   try {
     final targetFile = File(targetPath);
@@ -820,39 +820,37 @@ Map<String, dynamic> _fetchGradesIsolate(Map<String, dynamic> args) {
       };
     }
 
-    // م١ في العمود الأول للمادة، وم٢ في العمود الثالث
-    final int targetGradeCol =
-        _normalizeHeader(mahsalaType) == 'م1' ? targetBaseCol : targetBaseCol + 2;
+    // الفصل الأول يرحّل م١/ف١ إلى أول عمودين، والثاني يرحّل م٢/ف٢ إلى ثالث ورابع عمودين.
+    final bool isFirstSemester =
+        _normalizeArabicText(semesterName) == _normalizeArabicText('الفصل الأول');
+    final String mahsalaHeader = isFirstSemester ? 'م١' : 'م٢';
+    final String examHeader = isFirstSemester ? 'ف١' : 'ف٢';
+    final int targetStartCol = targetBaseCol + (isFirstSemester ? 0 : 2);
 
-    // التحقق من عنوان العمود المستهدف في الصف الخامس (index 4)
-    final targetSubHeader = _getValueAt(
-      targetRows,
-      targetGradeCol,
-      4,
-      targetSharedStrings,
-    );
-
-    if (_normalizeHeader(targetSubHeader) != _normalizeHeader(mahsalaType)) {
-      return {
-        'success': false,
-        'message':
-            'ترتيب أعمدة المادة في ملف الأتمتة لا يطابق المتوقع: لم يتم العثور على $mahsalaType في موضع اللصق.',
-      };
+    // التحقق من عنواني العمودين المستهدفين في الصف الخامس (index 4).
+    for (int offset = 0; offset < 2; offset++) {
+      final expectedHeader = offset == 0 ? mahsalaHeader : examHeader;
+      final targetSubHeader = _getValueAt(
+        targetRows, targetStartCol + offset, 4, targetSharedStrings,
+      );
+      if (_normalizeHeader(targetSubHeader) != _normalizeHeader(expectedHeader)) {
+        return {
+          'success': false,
+          'message':
+              'ترتيب أعمدة المادة في ملف الأتمتة غير مطابق: تعذر العثور على $expectedHeader في موضع اللصق.',
+        };
+      }
     }
 
-    // 2. البحث عن عمود م١ أو م٢ في الصف الثاني (index 1) من ورقة المصدر
-    final String wantedHeader = _normalizeHeader(mahsalaType);
+    // البحث عن عمود المحصلة م١/م٢، والتحقق من أن عمود الاختبار ف١/ف٢ يليه مباشرة.
+    final String wantedMahsalaHeader = _normalizeHeader(mahsalaHeader);
+    final String wantedExamHeader = _normalizeHeader(examHeader);
     int sourceGradeCol = -1;
-
-    for (int c = 4; c < 500; c++) {
-      final value = _getValueAt(
-        sourceRows,
-        c,
-        1,
-        sourceSharedStrings,
-      );
-
-      if (_normalizeHeader(value) == wantedHeader) {
+    for (int c = 4; c < 499; c++) {
+      final value = _getValueAt(sourceRows, c, 1, sourceSharedStrings);
+      final nextValue = _getValueAt(sourceRows, c + 1, 1, sourceSharedStrings);
+      if (_normalizeHeader(value) == wantedMahsalaHeader &&
+          _normalizeHeader(nextValue) == wantedExamHeader) {
         sourceGradeCol = c;
         break;
       }
@@ -862,38 +860,33 @@ Map<String, dynamic> _fetchGradesIsolate(Map<String, dynamic> args) {
       return {
         'success': false,
         'message':
-            'لم يتم العثور على عنوان $mahsalaType في الصف الثاني بدءاً من العمود E بورقة ($subjectName).',
+            'لم يتم العثور على العمودين المتتابعين $mahsalaHeader و$examHeader في الصف الثاني بورقة ($subjectName).',
       };
     }
 
-    // 3. مسح جميع صفوف ورقة أعمال السنة (شبيه VLOOKUP) والتقاط أول صف به محصلة صالحة (0 إلى 20)
-    // حتى لو كانت المحصلات لصف دراسي معين في منتصف أو نهاية الجدول
-    final Map<String, num> gradesMap = {};
+    // جمع درجتي المحصلة والاختبار لكل طالب بالاعتماد على رقم الجلوس.
+    // المحصلة تحتفظ بطريقة احتسابها الاحتياطية الحالية، ودرجة الاختبار تُقرأ مباشرة من عمود ف.
+    final Map<String, List<num?>> gradesMap = {};
     int? firstFoundStudentRow;
-
     for (int r = 3; r <= sourceMaxRow; r++) {
-      final seatValue = _getValueAt(
-        sourceRows,
-        0,
-        r,
-        sourceSharedStrings,
-      );
-
+      final seatValue = _getValueAt(sourceRows, 0, r, sourceSharedStrings);
       final seat = _normalizeSeat(seatValue);
       if (seat.isEmpty) continue;
 
-      final validScore = _extractValidMahsalaScore(
-        sourceRows,
-        sourceGradeCol,
-        r,
-        sourceSharedStrings,
+      final mahsalaScore = _extractValidMahsalaScore(
+        sourceRows, sourceGradeCol, r, sourceSharedStrings,
       );
+      final rawExamScore = _getValueAt(
+        sourceRows, sourceGradeCol + 1, r, sourceSharedStrings,
+      );
+      final num? examScore = rawExamScore is num
+          ? rawExamScore
+          : num.tryParse(rawExamScore?.toString().trim() ?? '');
 
-      // تجاهل الصفوف الفارغة (التي لم تُرصد درجاتها أو تخص صفوفاً دراسية أخرى)
-      if (validScore == null) continue;
-
+      // لا نهمل الطالب إذا كانت إحدى الدرجتين موجودة والأخرى فارغة.
+      if (mahsalaScore == null && examScore == null) continue;
       firstFoundStudentRow ??= (r + 1);
-      gradesMap[seat] = validScore;
+      gradesMap[seat] = [mahsalaScore, examScore];
     }
 
     if (gradesMap.isEmpty) {
@@ -903,7 +896,7 @@ Map<String, dynamic> _fetchGradesIsolate(Map<String, dynamic> args) {
         'unmatched': 0,
         'emptyGrades': 0,
         'message':
-            'لم توجد أي محصلات رقمية مرصودة (من 0 إلى 20) في ورقة ($subjectName) لـ ($mahsalaType).',
+            'لم توجد درجات محصلة أو اختبار مرصودة في ورقة ($subjectName) لـ ($semesterName).',
       };
     }
 
@@ -923,23 +916,18 @@ Map<String, dynamic> _fetchGradesIsolate(Map<String, dynamic> args) {
       if (seat.isEmpty) continue;
 
       if (gradesMap.containsKey(seat)) {
-        final grade = gradesMap[seat]!;
-
-        _writeConstantValue(
-          targetSheetData,
-          targetRows,
-          targetGradeCol,
-          r,
-          grade,
-        );
+        final grades = gradesMap[seat]!;
+        // لصق المحصلة والاختبار في عمودين متتابعين.
+        for (int offset = 0; offset < 2; offset++) {
+          final grade = grades[offset];
+          if (grade == null) continue;
+          _writeConstantValue(
+            targetSheetData, targetRows, targetStartCol + offset, r, grade,
+          );
+        }
 
         // تحديث القيمة المحسوبة المخزنة لدالة المجموع في الصف مع الحفاظ على المعادلة
-        _updateRowSumCachedValues(
-          targetRows,
-          r,
-          targetSharedStrings,
-        );
-
+        _updateRowSumCachedValues(targetRows, r, targetSharedStrings);
         updatedCount++;
       } else {
         unmatchedCount++;
@@ -953,7 +941,7 @@ Map<String, dynamic> _fetchGradesIsolate(Map<String, dynamic> args) {
         'unmatched': unmatchedCount,
         'emptyGrades': 0,
         'message':
-            'تم العثور على (${gradesMap.length}) محصلة في أعمال السنة، لكن أرقام القيد لم تتطابق مع ملف الأتمتة.',
+            'تم العثور على درجات (${gradesMap.length}) طالباً في أعمال السنة، لكن أرقام القيد لم تتطابق مع ملف الأتمتة.',
       };
     }
 
@@ -1008,7 +996,7 @@ class _FetchGradesScreenState extends State<FetchGradesScreen> {
 
   List<String> _subjects = [];
   String? _selectedSubject;
-  String _selectedMahsala = 'م١';
+  String _selectedSemester = 'الفصل الأول';
 
   bool _isLoading = false;
 
@@ -1277,7 +1265,7 @@ class _FetchGradesScreenState extends State<FetchGradesScreen> {
           'targetPath': _targetPath,
           'sourcePath': _sourcePath,
           'subjectName': _selectedSubject,
-          'mahsalaType': _selectedMahsala,
+          'semesterName': _selectedSemester,
         },
       );
 
@@ -1299,7 +1287,7 @@ class _FetchGradesScreenState extends State<FetchGradesScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                '✅ تم لصق ($count) محصلة كقيم ثابتة لمادة ($_selectedSubject - $_selectedMahsala).\n'
+                '✅ تم ترحيل ($count) طالباً (المحصلة والاختبار) كقيم ثابتة لمادة ($_selectedSubject - $_selectedSemester).\n'
                 'أول صف مرصود في المصدر: صف ($firstRow) | طلاب بلا تطابق: (${result['unmatched']}).',
               ),
               backgroundColor: Colors.green.shade800,
@@ -1432,7 +1420,7 @@ class _FetchGradesScreenState extends State<FetchGradesScreen> {
 
             // 4. اختيار المحصلة
             const Text(
-              '4. المحصلة المطلوب جلبها:',
+              '4. الفصل الدراسي المطلوب جلب درجاته:',
               style: TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 14,
@@ -1446,15 +1434,15 @@ class _FetchGradesScreenState extends State<FetchGradesScreen> {
                 Expanded(
                   child: RadioListTile<String>(
                     title: const Text(
-                      'محصلة م١',
+                      'الفصل الأول',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    value: 'م١',
-                    groupValue: _selectedMahsala,
+                    value: 'الفصل الأول',
+                    groupValue: _selectedSemester,
                     activeColor: const Color(0xFF1B5E20),
                     onChanged: (value) {
                       if (value != null) {
-                        setState(() => _selectedMahsala = value);
+                        setState(() => _selectedSemester = value);
                       }
                     },
                     contentPadding: EdgeInsets.zero,
@@ -1463,15 +1451,15 @@ class _FetchGradesScreenState extends State<FetchGradesScreen> {
                 Expanded(
                   child: RadioListTile<String>(
                     title: const Text(
-                      'محصلة م٢',
+                      'الفصل الثاني',
                       style: TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    value: 'م٢',
-                    groupValue: _selectedMahsala,
+                    value: 'الفصل الثاني',
+                    groupValue: _selectedSemester,
                     activeColor: const Color(0xFF1B5E20),
                     onChanged: (value) {
                       if (value != null) {
-                        setState(() => _selectedMahsala = value);
+                        setState(() => _selectedSemester = value);
                       }
                     },
                     contentPadding: EdgeInsets.zero,
