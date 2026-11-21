@@ -17,6 +17,7 @@ dependencies:
   device_info_plus: ^10.1.0
   shared_preferences: ^2.2.3
   crypto: ^3.0.6
+  cryptography: ^2.7.0
   permission_handler: ^11.3.1
   
   # حزم معالجة الوثائق والملفات والطباعة المباشرة
