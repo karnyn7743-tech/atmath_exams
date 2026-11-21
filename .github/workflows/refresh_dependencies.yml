@@ -45,6 +45,28 @@ jobs:
             echo "pubspec.lock is already up to date."
           fi
 
+      - name: Set up Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Generate missing Gradle wrapper
+        working-directory: android
+        run: |
+          if [ ! -f gradlew ]; then
+            gradle wrapper --gradle-version 9.3.1 --distribution-type all
+          fi
+
+      - name: Commit Gradle wrapper files
+        run: |
+          git add android/gradlew android/gradlew.bat android/gradle/wrapper/gradle-wrapper.jar android/gradle/wrapper/gradle-wrapper.properties
+          if ! git diff --staged --quiet; then
+            git commit -m "build: add Gradle 9.3.1 wrapper"
+            git push
+          else
+            echo "Gradle wrapper files are already present."
+          fi
+
       - name: Verify Android Gradle configuration
         working-directory: android
         run: ./gradlew help --no-daemon
