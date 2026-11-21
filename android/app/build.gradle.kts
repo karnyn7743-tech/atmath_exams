@@ -1,5 +1,6 @@
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -19,29 +20,24 @@ android {
         applicationId = "com.luqman.atmath_exams"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        
+
         // ضبط الحد الأدنى إلى 21 لدعم ML Kit و Mobile Scanner
         minSdk = 21
         targetSdk = 36
-        
+
         // تفعيل MultiDex لاستيعاب مكتبات معالجة الصور والذكاء الاصطناعي والإكسيل
         multiDexEnabled = true
 
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
-        // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
-        // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
-        // flag during build.
+        // is added automatically by Flutter. (https://flutter.dev/to/review-gradle-config).
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // Signing with the debug keys for now, so flutter run --release works.
             signingConfig = signingConfigs.getByName("debug")
-
-            // تعطيل R8 نهائياً لتفادي أخطاء Missing classes الخاصة بـ ML Kit
             isMinifyEnabled = false
             isShrinkResources = false
         }
@@ -57,7 +53,6 @@ kotlin {
 flutter {
     source = "../.."
 }
-
 
 dependencies {
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
