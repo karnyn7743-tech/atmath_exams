@@ -992,14 +992,14 @@ Map<String, dynamic> _fetchGradesIsolate(Map<String, dynamic> args) {
 // واجهة الشاشة
 // ═══════════════════════════════════════════════════════════
 
-class FetchGradesScreen extends StatefulWidget {
-  const FetchGradesScreen({super.key});
+class FetchMahsalaScreen extends StatefulWidget {
+  const FetchMahsalaScreen({super.key});
 
   @override
-  State<FetchGradesScreen> createState() => _FetchGradesScreenState();
+  State<FetchMahsalaScreen> createState() => _FetchMahsalaScreenState();
 }
 
-class _FetchGradesScreenState extends State<FetchGradesScreen> {
+class _FetchMahsalaScreenState extends State<FetchMahsalaScreen> {
   String? _targetPath;
   String? _targetName;
 
