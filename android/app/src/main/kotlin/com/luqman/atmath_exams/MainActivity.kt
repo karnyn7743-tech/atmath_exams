@@ -51,6 +51,8 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 val subjectCode = (arguments["subjectCode"] as? Number)?.toInt() ?: 1
+                val cropTopFraction = (arguments["cropTopFraction"] as? Number)?.toFloat() ?: 0f
+                val cropBottomFraction = (arguments["cropBottomFraction"] as? Number)?.toFloat() ?: 0f
 
                 if (sourcePath.isNullOrBlank() || outputPath.isNullOrBlank()) {
                     result.error("INVALID_ARGUMENT", "مسار ملف PDF غير صالح.", null)
@@ -63,7 +65,9 @@ class MainActivity : FlutterActivity() {
                             sourcePath = sourcePath,
                             outputPath = outputPath,
                             students = students,
-                            subjectCode = subjectCode
+                            subjectCode = subjectCode,
+                            cropTopFraction = cropTopFraction,
+                            cropBottomFraction = cropBottomFraction
                         )
                         Handler(Looper.getMainLooper()).post {
                             result.success(outputPath)
@@ -81,7 +85,9 @@ class MainActivity : FlutterActivity() {
         sourcePath: String,
         outputPath: String,
         students: List<Map<String, String>>,
-        subjectCode: Int
+        subjectCode: Int,
+        cropTopFraction: Float,
+        cropBottomFraction: Float
     ) {
         PDFBoxResourceLoader.init(applicationContext)
 
@@ -116,8 +122,9 @@ class MainActivity : FlutterActivity() {
                         val pageHeight = PDRectangle.A4.height
                         val hasStudentData = !student["seatNo"].isNullOrBlank() && pageIndex == 0
 
-                        val topReserve = if (hasStudentData) 34f else 0f
-                        val bottomReserve = if (hasStudentData) 62f else 0f
+                        // Reserve 1 cm for the student header and 3 cm for the QR/grade footer.
+                        val topReserve = if (hasStudentData) 28.35f else 0f
+                        val bottomReserve = if (hasStudentData) 85.04f else 0f
                         val sideMargin = 20f
                         val contentWidth = pageWidth - (sideMargin * 2f)
                         val contentHeight = pageHeight - topReserve - bottomReserve
@@ -125,15 +132,39 @@ class MainActivity : FlutterActivity() {
                         val box = form.bBox ?: sourcePage.mediaBox
                         val sourceWidth = box.width.coerceAtLeast(1f)
                         val sourceHeight = box.height.coerceAtLeast(1f)
-                        val scale = minOf(contentWidth / sourceWidth, contentHeight / sourceHeight)
-                        val drawnWidth = sourceWidth * scale
-                        val drawnHeight = sourceHeight * scale
-                        val offsetX = sideMargin + (contentWidth - drawnWidth) / 2f
-                        val offsetY = bottomReserve + (contentHeight - drawnHeight) / 2f
+                        // Apply optional cropping only to the first source page.
+                        val safeTopFraction = (if (pageIndex == 0) cropTopFraction else 0f)
+                            .coerceIn(0f, 0.99f)
+                        val safeBottomFraction = (if (pageIndex == 0) cropBottomFraction else 0f)
+                            .coerceIn(0f, 0.99f)
+                        val effectiveBottomFraction =
+                            minOf(safeBottomFraction, 0.99f - safeTopFraction)
+                        val topCrop = sourceHeight * safeTopFraction
+                        val bottomCrop = sourceHeight * effectiveBottomFraction
+                        val visibleHeight = (sourceHeight - topCrop - bottomCrop).coerceAtLeast(1f)
+                        val scaleX = contentWidth / sourceWidth
+                        val scaleY = contentHeight / visibleHeight
+                        val offsetX = sideMargin
+                        val offsetY = bottomReserve
+                        val boxLeft = box.lowerLeftX
+                        val boxBottom = box.lowerLeftY
 
                         PDPageContentStream(output, page).use { stream ->
                             stream.saveGraphicsState()
-                            stream.transform(Matrix(scale, 0f, 0f, scale, offsetX, offsetY))
+                            stream.transform(
+                                Matrix(
+                                    scaleX, 0f, 0f, scaleY,
+                                    offsetX - (boxLeft * scaleX),
+                                    offsetY - ((boxBottom + bottomCrop) * scaleY)
+                                )
+                            )
+                            stream.addRect(
+                                boxLeft,
+                                boxBottom + bottomCrop,
+                                sourceWidth,
+                                visibleHeight
+                            )
+                            stream.clip()
                             stream.drawForm(form)
                             stream.restoreGraphicsState()
 
