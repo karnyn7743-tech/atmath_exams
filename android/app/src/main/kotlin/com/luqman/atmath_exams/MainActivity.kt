@@ -132,41 +132,55 @@ class MainActivity : FlutterActivity() {
                         val box = form.bBox ?: sourcePage.mediaBox
                         val sourceWidth = box.width.coerceAtLeast(1f)
                         val sourceHeight = box.height.coerceAtLeast(1f)
-                        // Apply optional cropping only to the first source page.
-                        val safeTopFraction = (if (pageIndex == 0) cropTopFraction else 0f)
-                            .coerceIn(0f, 0.99f)
-                        val safeBottomFraction = (if (pageIndex == 0) cropBottomFraction else 0f)
-                            .coerceIn(0f, 0.99f)
-                        val effectiveBottomFraction =
-                            minOf(safeBottomFraction, 0.99f - safeTopFraction)
-                        val topCrop = sourceHeight * safeTopFraction
-                        val bottomCrop = sourceHeight * effectiveBottomFraction
-                        val visibleHeight = (sourceHeight - topCrop - bottomCrop).coerceAtLeast(1f)
-                        val scaleX = contentWidth / sourceWidth
-                        val scaleY = contentHeight / visibleHeight
-                        val offsetX = sideMargin
-                        val offsetY = bottomReserve
-                        val boxLeft = box.lowerLeftX
-                        val boxBottom = box.lowerLeftY
-
                         PDPageContentStream(output, page).use { stream ->
-                            stream.saveGraphicsState()
-                            stream.transform(
-                                Matrix(
-                                    scaleX, 0f, 0f, scaleY,
-                                    offsetX - (boxLeft * scaleX),
-                                    offsetY - ((boxBottom + bottomCrop) * scaleY)
+                            if (pageIndex == 0) {
+                                // Crop and stretch only the first page into the space
+                                // between the student header and the QR/grade footer.
+                                val safeTopFraction = cropTopFraction.coerceIn(0f, 0.99f)
+                                val safeBottomFraction = cropBottomFraction.coerceIn(0f, 0.99f)
+                                val effectiveBottomFraction =
+                                    minOf(safeBottomFraction, 0.99f - safeTopFraction)
+                                val topCrop = sourceHeight * safeTopFraction
+                                val bottomCrop = sourceHeight * effectiveBottomFraction
+                                val visibleHeight =
+                                    (sourceHeight - topCrop - bottomCrop).coerceAtLeast(1f)
+                                val scaleX = contentWidth / sourceWidth
+                                val scaleY = contentHeight / visibleHeight
+                                val offsetX = sideMargin
+                                val offsetY = bottomReserve
+                                val boxLeft = box.lowerLeftX
+                                val boxBottom = box.lowerLeftY
+
+                                stream.saveGraphicsState()
+                                stream.transform(
+                                    Matrix(
+                                        scaleX, 0f, 0f, scaleY,
+                                        offsetX - (boxLeft * scaleX),
+                                        offsetY - ((boxBottom + bottomCrop) * scaleY)
+                                    )
                                 )
-                            )
-                            stream.addRect(
-                                boxLeft,
-                                boxBottom + bottomCrop,
-                                sourceWidth,
-                                visibleHeight
-                            )
-                            stream.clip()
-                            stream.drawForm(form)
-                            stream.restoreGraphicsState()
+                                stream.addRect(
+                                    boxLeft,
+                                    boxBottom + bottomCrop,
+                                    sourceWidth,
+                                    visibleHeight
+                                )
+                                stream.clip()
+                                stream.drawForm(form)
+                                stream.restoreGraphicsState()
+                            } else {
+                                // Keep every later page complete and preserve its aspect ratio.
+                                val scale = minOf(contentWidth / sourceWidth, contentHeight / sourceHeight)
+                                val drawnWidth = sourceWidth * scale
+                                val drawnHeight = sourceHeight * scale
+                                val offsetX = sideMargin + (contentWidth - drawnWidth) / 2f
+                                val offsetY = bottomReserve + (contentHeight - drawnHeight) / 2f
+
+                                stream.saveGraphicsState()
+                                stream.transform(Matrix(scale, 0f, 0f, scale, offsetX, offsetY))
+                                stream.drawForm(form)
+                                stream.restoreGraphicsState()
+                            }
 
                             if (hasStudentData) {
                                 val name = student["name"]?.toString().orEmpty()
