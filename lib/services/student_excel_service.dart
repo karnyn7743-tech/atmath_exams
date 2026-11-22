@@ -51,7 +51,12 @@ class StudentExcelService {
           String content = utf8.decode(contentBytes);
           
           if (content.contains('<dimension')) {
-            content = content.replaceAll(RegExp(r'<dimension[^>]*>'), '<dimension ref="A1:Z10000"/>');
+            // نمدد عدد الصفوف مع الحفاظ على آخر عمود فعلي في الملف؛
+            // لا نفرض Z حتى لا تختفي المواد الواقعة بعد العمود Z.
+            content = content.replaceAllMapped(
+              RegExp(r'<dimension[^>]*ref="A1:([A-Z]+)[0-9]+"[^>]*/?>'),
+              (match) => '<dimension ref="A1:${match.group(1)}10000"/>',
+            );
           }
           
           final newFile = ArchiveFile(file.name, content.length, utf8.encode(content));
