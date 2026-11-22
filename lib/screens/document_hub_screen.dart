@@ -16,7 +16,8 @@ import 'package:printing/printing.dart';
 
 /// بوابة مستقلة لفتح مستندات PDF وDOCX دون إدخالها في نموذج الاختبار القديم.
 class DocumentHubScreen extends StatefulWidget {
-  const DocumentHubScreen({super.key});
+  final bool isOfficial;
+  const DocumentHubScreen({super.key, this.isOfficial = false});
 
   @override
   State<DocumentHubScreen> createState() => _DocumentHubScreenState();
@@ -209,7 +210,7 @@ class _DocumentHubScreenState extends State<DocumentHubScreen> {
         useRootNavigator: true,
         barrierDismissible: false,
         useSafeArea: true,
-        builder: (dialogContext) => _StudentSetupDialog(isPdf: _isPdf),
+        builder: (dialogContext) => _StudentSetupDialog(isPdf: _isPdf, isOfficial: widget.isOfficial),
       );
     } catch (e, stackTrace) {
       debugPrint('فتح نافذة بيانات الطلاب فشل: $e\n$stackTrace');
@@ -250,12 +251,18 @@ class _DocumentHubScreenState extends State<DocumentHubScreen> {
       }
       StudentExcelResult? excelResult;
       if (_excelPath != null) {
-        excelResult = await StudentExcelService.parseExcelFile(
-          _excelPath!,
-          expectedSubject: _subjectController.text.trim(),
-          targetGrade: _gradeController.text.trim(),
-          examTitle: _examTitleController.text.trim(),
-        );
+        excelResult = widget.isOfficial
+            ? await StudentExcelService.parseOfficialExcelFile(
+                _excelPath!,
+                expectedSubject: _subjectController.text.trim(),
+                targetGrade: _gradeController.text.trim(),
+              )
+            : await StudentExcelService.parseExcelFile(
+                _excelPath!,
+                expectedSubject: _subjectController.text.trim(),
+                targetGrade: _gradeController.text.trim(),
+                examTitle: _examTitleController.text.trim(),
+              );
         if (excelResult.students.isEmpty) {
           throw Exception('لم يتم العثور على طلاب مطابقين للصف والمادة المحددين.');
         }
@@ -680,7 +687,8 @@ class StudentSetup {
 
 class _StudentSetupDialog extends StatefulWidget {
   final bool isPdf;
-  const _StudentSetupDialog({required this.isPdf});
+  final bool isOfficial;
+  const _StudentSetupDialog({required this.isPdf, required this.isOfficial});
   @override
   State<_StudentSetupDialog> createState() => _StudentSetupDialogState();
 }
@@ -693,12 +701,14 @@ class _StudentSetupDialogState extends State<_StudentSetupDialog> {
 
   Future<void> _chooseExcel() async {
     try {
-      final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: const ['xlsx', 'xlsm'], withData: false);
+      final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: widget.isOfficial ? const ['xlsx'] : const ['xlsx', 'xlsm'], withData: false);
       if (result == null || result.files.isEmpty) return;
       final path = result.files.single.path;
       if (path == null || path.trim().isEmpty) throw Exception('تعذر الوصول إلى ملف Excel المحدد.');
       setState(() { _loading = true; _error = null; _excelPath = null; _subject = null; _grade = null; _period = null; _subjects = []; _grades = []; _periods = []; });
-      final subjects = await StudentExcelService.getSubjectSheetNames(path);
+      final subjects = widget.isOfficial
+          ? await StudentExcelService.getOfficialSubjects(path)
+          : await StudentExcelService.getSubjectSheetNames(path);
       if (!mounted) return;
       if (subjects.isEmpty) throw Exception('لم يُعثر على أوراق مواد تحتوي على كشف الطلاب المتوقع.');
       setState(() { _excelPath = path; _subjects = subjects; });
@@ -711,7 +721,9 @@ class _StudentSetupDialogState extends State<_StudentSetupDialog> {
     if (value == null || _excelPath == null) return;
     setState(() { _loading = true; _error = null; _subject = value; _grade = null; _period = null; _grades = []; _periods = []; });
     try {
-      final options = await StudentExcelService.getSheetOptions(_excelPath!, value);
+      final options = widget.isOfficial
+          ? await StudentExcelService.getOfficialSheetOptions(_excelPath!)
+          : await StudentExcelService.getSheetOptions(_excelPath!, value);
       if (!mounted) return;
       setState(() {
         _grades = options.grades;
@@ -748,11 +760,11 @@ class _StudentSetupDialogState extends State<_StudentSetupDialog> {
                 label: Text(_excelPath == null ? '١ - اختيار ملف Excel' : 'تم اختيار ملف Excel'),
               )),
               const SizedBox(height: 12),
-              _dropdown(label: '٢ - المادة / ورقة العمل', value: _subject, values: _subjects, onChanged: _excelPath == null ? null : _selectSubject),
+              _dropdown(label: widget.isOfficial ? '٢ - المادة من الكشف الرسمي' : '٢ - المادة / ورقة العمل', value: _subject, values: _subjects, onChanged: _excelPath == null ? null : _selectSubject),
               const SizedBox(height: 12),
               _dropdown(label: '٣ - الصف الدراسي', value: _grade, values: _grades, onChanged: _subject == null ? null : (v) => setState(() => _grade = v)),
               const SizedBox(height: 12),
-              _dropdown(label: '٤ - الشهر أو الاختبار', value: _period, values: _periods, onChanged: _subject == null ? null : (v) => setState(() => _period = v)),
+              _dropdown(label: widget.isOfficial ? '٤ - نوع الدرجة' : '٤ - الشهر أو الاختبار', value: _period, values: _periods, onChanged: _subject == null ? null : (v) => setState(() => _period = v)),
               if (_loading) ...[const SizedBox(height: 12), const LinearProgressIndicator(), const SizedBox(height: 6), const Text('جارٍ قراءة بيانات ملف Excel...')],
               if (_error != null) ...[const SizedBox(height: 10), Text(_error!, style: const TextStyle(color: Colors.red))],
               const SizedBox(height: 12),
