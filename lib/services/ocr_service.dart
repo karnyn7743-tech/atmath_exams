@@ -1,143 +1,84 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:google_ml_kit/google_ml_kit.dart';
+
+import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
-import 'digit_recognizer.dart';  // ← إضافة واحدة فقط
 
+/// خدمة OCR مستقلة. يتولى GradeEntryScreen حالياً قص مناطق الدرجة والتعرف عليها.
 class OCRService {
-  late TextRecognizer _textRecognizer;
-  bool _isInitialized = false;
-  final DigitRecognizer _digitRecognizer = DigitRecognizer();  // ← إضافة واحدة فقط
+  late final TextRecognizer _textRecognizer;
+  bool _isClosed = false;
 
   OCRService() {
-    _initRecognizer();
+    _textRecognizer = TextRecognizer(
+      script: TextRecognitionScript.latin,
+    );
   }
 
-  Future<void> _initRecognizer() async {
-    try {
-      // محاولة استخدام النموذج العربي
-      final options = TextRecognizerOptions(
-        language: TextRecognitionLanguage.arabic,
-      );
-      _textRecognizer = GoogleMlKit.vision.textRecognizer(options);
-    } catch (e) {
-      // استخدام النموذج الافتراضي
-      _textRecognizer = GoogleMlKit.vision.textRecognizer();
-    }
-    await _digitRecognizer.init();  // ← إضافة واحدة فقط
-    _isInitialized = true;
-  }
-
-  /// التعرف على النص من ملف صورة
   Future<String?> recognizeTextFromFile(String filePath) async {
-    if (!_isInitialized) await _initRecognizer();
-
+    if (_isClosed) throw StateError('تم إغلاق خدمة التعرف الضوئي.');
     try {
       final inputImage = InputImage.fromFilePath(filePath);
       final recognizedText = await _textRecognizer.processImage(inputImage);
       return recognizedText.text.trim();
     } catch (e) {
-      print('OCR from file error: $e');
       return null;
     }
   }
 
-  /// التعرف على النص من Uint8List
   Future<String?> recognizeTextFromBytes(Uint8List imageBytes) async {
-    if (!_isInitialized) await _initRecognizer();
-
+    if (_isClosed) throw StateError('تم إغلاق خدمة التعرف الضوئي.');
+    String? tempPath;
     try {
       final tempDir = await getTemporaryDirectory();
-      final tempPath = '${tempDir.path}/ocr_${DateTime.now().millisecondsSinceEpoch}.png';
-      await File(tempPath).writeAsBytes(imageBytes);
-
-      final result = await recognizeTextFromFile(tempPath);
-
-      await File(tempPath).delete();
-
-      return result;
+      tempPath = '${tempDir.path}/ocr_${DateTime.now().microsecondsSinceEpoch}.png';
+      await File(tempPath).writeAsBytes(imageBytes, flush: true);
+      return await recognizeTextFromFile(tempPath);
     } catch (e) {
-      print('OCR from bytes error: $e');
       return null;
-    }
-  }
-
-  /// التعرف على النص من img.Image
-  Future<String?> recognizeTextFromImage(img.Image image) async {
-    final bytes = Uint8List.fromList(img.encodePng(image));
-    return await recognizeTextFromBytes(bytes);
-  }
-
-  /// التعرف على الأرقام فقط من الصورة (مخصص للدرجات)
-  Future<String?> recognizeGradeFromImage(img.Image image) async {
-    // ← الجزء الوحيد المضاف: محاولة TFLite أولاً
-    if (_digitRecognizer.isReady) {
-      try {
-        final tfliteResult = await _digitRecognizer.recognizeGrade(image);
-        if (tfliteResult.isNotEmpty) {
-          return tfliteResult;
-        }
-      } catch (e) {
-        print('TFLite error: $e');
+    } finally {
+      if (tempPath != null) {
+        final tempFile = File(tempPath);
+        if (await tempFile.exists()) await tempFile.delete();
       }
     }
-    // ← نهاية الإضافة
-
-    final text = await recognizeTextFromImage(image);
-    if (text == null) return null;
-
-    // استخراج الأرقام من النص
-    final regex = RegExp(r'[\d\u0660-\u0669\u06F0-\u06F9]+(?:[.,]\d+)?');
-    final match = regex.firstMatch(text);
-
-    if (match != null) {
-      String grade = match.group(0)!;
-      // تحويل الأرقام العربية إلى إنجليزية
-      grade = _convertArabicNumbers(grade);
-      // استبدال الفاصلة بنقطة
-      grade = grade.replaceAll(',', '.');
-      return grade;
-    }
-
-    return null;
   }
 
-  /// التعرف على رقم المادة
+  Future<String?> recognizeTextFromImage(img.Image image) {
+    return recognizeTextFromBytes(Uint8List.fromList(img.encodePng(image)));
+  }
+
+  Future<String?> recognizeGradeFromImage(img.Image image) async {
+    final text = await recognizeTextFromImage(image);
+    if (text == null) return null;
+    final match = RegExp(r'[0-9٠-٩۰-۹]+(?:[.,][0-9٠-٩۰-۹]+)?').firstMatch(text);
+    if (match == null) return null;
+    return _convertArabicNumbers(match.group(0)!).replaceAll(',', '.');
+  }
+
   Future<String?> recognizeSubjectIdFromImage(img.Image image) async {
     final text = await recognizeTextFromImage(image);
     if (text == null) return null;
-
-    // استخراج الأرقام من النص
-    final regex = RegExp(r'\d+');
-    final match = regex.firstMatch(text);
-
-    if (match != null) {
-      return _convertArabicNumbers(match.group(0)!);
-    }
-
-    return null;
+    final match = RegExp(r'[0-9٠-٩۰-۹]+').firstMatch(text);
+    return match == null ? null : _convertArabicNumbers(match.group(0)!);
   }
 
-  /// تحويل الأرقام العربية إلى إنجليزية
   String _convertArabicNumbers(String input) {
-    const arabicNumbers = {
+    const digits = {
       '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
       '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9',
       '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
       '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9',
     };
-
-    String result = input;
-    arabicNumbers.forEach((arabic, english) {
-      result = result.replaceAll(arabic, english);
-    });
+    var result = input;
+    digits.forEach((key, value) => result = result.replaceAll(key, value));
     return result;
   }
 
-  /// إغلاق الـ recognizer
   void dispose() {
+    if (_isClosed) return;
+    _isClosed = true;
     _textRecognizer.close();
-    _digitRecognizer.dispose();  // ← إضافة واحدة فقط
   }
 }
