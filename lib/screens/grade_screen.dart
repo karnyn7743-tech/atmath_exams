@@ -498,7 +498,7 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
   Future<void> _loadLastExcelFile() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final String? lastFile = prefs.getString('last_excel_file');
+      final String? lastFile = prefs.getString('last_official_excel_file');
       if (lastFile != null && await File(lastFile).exists()) {
         setState(() {
           _selectedFilePath = lastFile;
@@ -654,7 +654,7 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
       await _parseExcelFile(publicFile.path);
 
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('last_excel_file', publicFile.path);
+      await prefs.setString('last_official_excel_file', publicFile.path);
 
       _showSnackBar('✅ تم تحميل ورقة (statment) بنجاح');
     } catch (e) {
