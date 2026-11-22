@@ -113,12 +113,18 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
         // العمود D: الرقم السري (columnIndex: 3)
         final cellD = sheet.cell(px.CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: row)).value;
 
-        if (cellB != null && cellD != null) {
-          final secret = cellD.toString().trim();
-          final name = cellB.toString().trim();
-          if (secret.isNotEmpty && name.isNotEmpty) {
-            _studentMap[secret] = name;
-          }
+        String cellText(dynamic value) {
+          if (value == null) return '';
+          if (value is px.TextCellValue) return value.value.text?.trim() ?? '';
+          if (value is px.IntCellValue) return value.value.toString();
+          if (value is px.DoubleCellValue) return value.value.toInt().toString();
+          return value.toString().trim();
+        }
+
+        final secret = cellText(cellD);
+        final name = cellText(cellB);
+        if (secret.isNotEmpty && name.isNotEmpty) {
+          _studentMap[secret] = name;
         }
       }
 
