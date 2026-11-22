@@ -1,31 +1,38 @@
+import 'dart:io';
+
 import 'package:excel/excel.dart';
 
+/// خدمة مساعدة لقراءة ورقة الكشوفات الرسمية statment.
 class ExcelService {
   final String path;
-  late Excel _excel;
-  late Sheet _sheet;
+  late final Excel _excel;
+  late final Sheet _sheet;
 
   ExcelService(this.path) {
-    _loadExcel();
+    final bytes = File(path).readAsBytesSync();
+    _excel = Excel.decodeBytes(bytes);
+    final sheet = _excel.tables['statment'];
+    if (sheet == null) {
+      throw Exception('الملف لا يحتوي على ورقة statment.');
+    }
+    _sheet = sheet;
   }
 
-  void _loadExcel() {
-    var bytes = File(path).readAsBytesSync();
-    _excel = Excel.decodeBytes(bytes);
-    _sheet = _excel.tables.keys.first;
-    _excel.tables[_sheet]!;
+  String _cellText(int column, int row) {
+    final value = _sheet
+        .cell(CellIndex.indexByColumnRow(columnIndex: column, rowIndex: row))
+        .value;
+    if (value == null) return '';
+    if (value is TextCellValue) return value.value.text?.trim() ?? '';
+    if (value is IntCellValue) return value.value.toString();
+    if (value is DoubleCellValue) return value.value.toString();
+    return value.toString().trim();
   }
 
   int? findStudentBySecretCode(String secretCode) {
-    // البحث في العمود D (الرقم السري)
-    for (int row = 1; row < _sheet.maxRows; row++) {
-      // نبدأ من الصف 1 لأن الصف 0 هو العناوين
-      final cell = _sheet.cell(
-        CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: row),
-      );
-      if (cell.value == secretCode) {
-        return row;
-      }
+    final wanted = secretCode.trim();
+    for (int row = 5; row < _sheet.maxRows; row++) {
+      if (_cellText(3, row) == wanted) return row;
     }
     return null;
   }
@@ -33,49 +40,37 @@ class ExcelService {
   Future<void> updateGrade(
     int studentRow,
     String subjectName,
-    String grade,
-  ) async {
-    // العثور على عمود المادة
+    String grade, {
+    int columnOffset = 1,
+  }) async {
     int subjectColumn = -1;
-    for (int col = 4; col < _sheet.maxColumns; col++) {
-      // نبدأ من العمود E (index 4)
-      final cell = _sheet.cell(
-        CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 0),
-      );
-      if (cell.value == subjectName) {
+    for (int col = 4; col < _sheet.maxColumns; col += 5) {
+      if (_cellText(col, 2) == subjectName.trim()) {
         subjectColumn = col;
         break;
       }
     }
-
-    if (subjectColumn != -1) {
-      // تحديث الخلية
-      _sheet
-              .cell(
-                CellIndex.indexByColumnRow(
-                  columnIndex: subjectColumn,
-                  rowIndex: studentRow,
-                ),
-              )
-              .value =
-          grade;
-
-      // حفظ الملف
-      final fileBytes = _excel.encode();
-      if (fileBytes != null) {
-        await File(path).writeAsBytes(fileBytes);
-      }
+    if (subjectColumn < 0) {
+      throw Exception('لم يتم العثور على المادة في الصف الثالث من statment.');
     }
+    final targetColumn = subjectColumn + columnOffset;
+    _sheet
+        .cell(CellIndex.indexByColumnRow(
+          columnIndex: targetColumn,
+          rowIndex: studentRow,
+        ))
+        .value = TextCellValue(grade);
+    final bytes = _excel.encode();
+    if (bytes == null) throw Exception('تعذر إنشاء ملف Excel بعد تحديث الدرجة.');
+    await File(path).writeAsBytes(bytes, flush: true);
   }
 
   List<String> getSubjects() {
-    List<String> subjects = [];
-    for (int col = 4; col < _sheet.maxColumns; col++) {
-      final cell = _sheet.cell(
-        Cellindex.indexByColumnRow(columnIndex: col, rowIndex: 0),
-      );
-      if (cell.value != null) {
-        subjects.add(cell.value.toString());
+    final subjects = <String>[];
+    for (int col = 4; col < _sheet.maxColumns; col += 5) {
+      final value = _cellText(col, 2);
+      if (value.isNotEmpty && !value.contains('المجموع')) {
+        subjects.add(value);
       }
     }
     return subjects;
