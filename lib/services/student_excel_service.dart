@@ -325,6 +325,127 @@ class StudentExcelService {
     // بقية العناوين الشهرية تطابق اسم الشهر في الصف الثاني من ورقة المادة.
     return _extractMonthOrderFromTitle(examTitle, selectedSheet, resolvedTotal);
   }
+
+  // قراءة ملف الكشوفات الرسمية: ورقة statment واحدة، والمواد في الصف الثالث.
+  static Future<List<String>> getOfficialSubjects(String filePath) async {
+    final excel = await _loadExcelFile(filePath);
+    final sheet = excel.tables['statment'];
+    if (sheet == null) {
+      throw Exception('الملف لا يحتوي على ورقة statment الخاصة بالكشوفات الرسمية.');
+    }
+    final subjects = <String>[];
+    for (int column = 4; column < sheet.maxColumns; column += 5) {
+      final subject = _extractCleanText(sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: column, rowIndex: 2),
+      ));
+      if (subject.isNotEmpty && !subject.contains('المجموع')) {
+        subjects.add(subject);
+      }
+    }
+    if (subjects.isEmpty) {
+      throw Exception('لم يتم العثور على أسماء المواد في الصف الثالث بدءاً من العمود E.');
+    }
+    return subjects;
+  }
+
+  static Future<StudentSheetOptions> getOfficialSheetOptions(
+    String filePath,
+  ) async {
+    final excel = await _loadExcelFile(filePath);
+    final sheet = excel.tables['statment'];
+    if (sheet == null) {
+      throw Exception('الملف لا يحتوي على ورقة statment.');
+    }
+    final grades = <String>[];
+    final seen = <String>{};
+    for (int row = 5; row < sheet.maxRows; row++) {
+      final grade = _extractCleanText(sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row),
+      ));
+      final key = _normalizeArabic(grade);
+      if (grade.isNotEmpty && key.isNotEmpty && seen.add(key)) {
+        grades.add(grade);
+      }
+    }
+    return StudentSheetOptions(
+      grades: grades,
+      periods: const ['م١', 'ف١', 'م٢', 'ف٢'],
+    );
+  }
+
+  static Future<StudentExcelResult> parseOfficialExcelFile(
+    String filePath, {
+    required String expectedSubject,
+    required String targetGrade,
+  }) async {
+    final excel = await _loadExcelFile(filePath);
+    final sheet = excel.tables['statment'];
+    if (sheet == null) {
+      throw Exception('الملف المحدد لا يحتوي على ورقة statment.');
+    }
+
+    final subjects = <String>[];
+    for (int column = 4; column < sheet.maxColumns; column += 5) {
+      final subject = _extractCleanText(sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: column, rowIndex: 2),
+      ));
+      if (subject.isNotEmpty && !subject.contains('المجموع')) {
+        subjects.add(subject);
+      }
+    }
+
+    final selectedIndex = subjects.indexWhere(
+      (subject) => _normalizeArabic(subject) == _normalizeArabic(expectedSubject),
+    );
+    if (selectedIndex < 0) {
+      throw Exception('المادة المحددة غير موجودة في الصف الثالث من ورقة statment.');
+    }
+
+    final students = <StudentData>[];
+    for (int row = 5; row < sheet.maxRows; row++) {
+      final seat = _extractCleanText(sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row),
+      ));
+      final name = _extractCleanText(sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row),
+      ));
+      final grade = _extractCleanText(sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row),
+      ));
+      final secret = _extractCleanText(sheet.cell(
+        CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: row),
+      ));
+
+      if (seat.isEmpty && name.isEmpty && secret.isEmpty) continue;
+      if (name.isEmpty || secret.isEmpty) continue;
+      if (targetGrade.trim().isNotEmpty &&
+          !_isGradeMatch(grade, targetGrade.trim())) {
+        continue;
+      }
+
+      students.add(StudentData(
+        seatNo: seat,
+        name: name,
+        grade: grade,
+        secretCode: secret,
+      ));
+    }
+
+    students.sort((a, b) {
+      final aNo = int.tryParse(a.seatNo.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      final bNo = int.tryParse(b.seatNo.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      if (aNo > 0 && bNo > 0) return aNo.compareTo(bNo);
+      return a.seatNo.compareTo(b.seatNo);
+    });
+
+    return StudentExcelResult(
+      students: students,
+      subjectCode: selectedIndex + 1,
+      matchedSubjectName: subjects[selectedIndex],
+      totalMonths: 4,
+    );
+  }
+
   static Future<StudentExcelResult> parseExcelFile(
     String filePath, {
     String? expectedSubject,
