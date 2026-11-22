@@ -157,7 +157,7 @@ class _DocumentHubScreenState extends State<DocumentHubScreen> {
     if (wordDocument == null) throw Exception('مستند Word غير جاهز للتحويل.');
     final wordPdfBytes = await ExportService(wordDocument).exportToPdf();
     final tempDirectory = await getTemporaryDirectory();
-    final sourcePath = '\${tempDirectory.path}/word_source_\${DateTime.now().millisecondsSinceEpoch}.pdf';
+    final sourcePath = '${tempDirectory.path}/word_source_${DateTime.now().millisecondsSinceEpoch}.pdf';
     await File(sourcePath).writeAsBytes(wordPdfBytes, flush: true);
     return sourcePath;
   }
