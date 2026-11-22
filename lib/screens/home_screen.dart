@@ -5,6 +5,9 @@ import '../services/activation_service.dart';
 import 'activation_screen.dart';
 import 'document_hub_screen.dart';
 import 'fetch_grades_screen.dart';
+import 'fetch_grade_screen.dart';
+import 'grade_screen.dart';
+import 'scan_qr_screen.dart';
 import 'grade_scanner_screen.dart';
 import 'manual_grade_entry_screen.dart';
 
@@ -18,6 +21,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   bool _isActivated = false;
   int _remainingDays = 0;
+  bool _isOfficialMode = false;
 
   @override
   void initState() {
@@ -57,7 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _openDocumentHub() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const DocumentHubScreen()),
+      MaterialPageRoute(builder: (_) => DocumentHubScreen(isOfficial: _isOfficialMode)),
     );
     if (mounted) await _checkActivationStatus();
   }
@@ -65,7 +69,18 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openGradeScanner() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const GradeScannerScreen()),
+      MaterialPageRoute(
+        builder: (_) => _isOfficialMode
+            ? const GradeEntryScreen()
+            : const GradeScannerScreen(),
+      ),
+    );
+  }
+
+  void _openOfficialQrScanner() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ScanQRScreen()),
     );
   }
 
@@ -79,7 +94,11 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openFetchGradesScreen() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const FetchGradesScreen()),
+      MaterialPageRoute(
+        builder: (_) => _isOfficialMode
+            ? const FetchMahsalaScreen()
+            : const FetchGradesScreen(),
+      ),
     );
   }
 
@@ -148,32 +167,86 @@ class _HomeScreenState extends State<HomeScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    Directionality(
+                      textDirection: TextDirection.rtl,
+                      child: SegmentedButton<bool>(
+                        showSelectedIcon: false,
+                        style: ButtonStyle(
+                          textStyle: WidgetStateProperty.all(
+                            const TextStyle(fontSize: 15, fontWeight: FontWeight.w900),
+                          ),
+                          foregroundColor: WidgetStateProperty.resolveWith(
+                            (states) => states.contains(WidgetState.selected)
+                                ? Colors.white
+                                : const Color(0xFF172554),
+                          ),
+                          backgroundColor: WidgetStateProperty.resolveWith(
+                            (states) => states.contains(WidgetState.selected)
+                                ? const Color(0xFF123B67)
+                                : const Color(0xFFE2E8F0),
+                          ),
+                          side: WidgetStateProperty.all(
+                            const BorderSide(color: Color(0xFF334155), width: 1.5),
+                          ),
+                        ),
+                        segments: const [
+                          ButtonSegment<bool>(
+                            value: false,
+                            label: Text('ملف أعمال السنة'),
+                            icon: Icon(Icons.menu_book),
+                          ),
+                          ButtonSegment<bool>(
+                            value: true,
+                            label: Text('الكشوفات الرسمية'),
+                            icon: Icon(Icons.assignment),
+                          ),
+                        ],
+                        selected: {_isOfficialMode},
+                        onSelectionChanged: (value) {
+                          setState(() => _isOfficialMode = value.first);
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 22),
                     _buildMainActionButton(
                       title: 'فتح وتحرير ملفات Word وPDF',
                       icon: Icons.article_outlined,
                       onTap: _openDocumentHub,
-                      backgroundColor: const Color(0xFF7C829A),
+                      backgroundColor: const Color(0xFF334155),
                     ),
                     const SizedBox(height: 15),
                     _buildMainActionButton(
                       title: 'إدخال الدرجات من أوراق الاختبارات',
                       icon: Icons.qr_code_scanner,
                       onTap: _openGradeScanner,
-                      backgroundColor: const Color(0xFF6F9290),
+                      backgroundColor: const Color(0xFF075985),
                     ),
+                    if (_isOfficialMode) ...[
+                      const SizedBox(height: 15),
+                      _buildMainActionButton(
+                        title: 'التعرف على الطالب بمسح رمز QR',
+                        icon: Icons.qr_code_2,
+                        onTap: _openOfficialQrScanner,
+                        backgroundColor: const Color(0xFF5B21B6),
+                      ),
+                    ],
+                    if (!_isOfficialMode) ...[
+                      const SizedBox(height: 15),
+                      _buildMainActionButton(
+                        title: 'إدخال بقية درجات أعمال السنة',
+                        icon: Icons.playlist_add_check,
+                        onTap: _openManualGradeEntry,
+                        backgroundColor: const Color(0xFF166534),
+                      ),
+                    ],
                     const SizedBox(height: 15),
                     _buildMainActionButton(
-                      title: 'إدخال بقية درجات أعمال السنة',
-                      icon: Icons.playlist_add_check,
-                      onTap: _openManualGradeEntry,
-                      backgroundColor: const Color(0xFF718B79),
-                    ),
-                    const SizedBox(height: 15),
-                    _buildMainActionButton(
-                      title: 'جلب درجات أعمال السنة إلى الكشوفات الرسمية',
+                      title: _isOfficialMode
+                          ? 'جلب المحصلات م١ وم٢ إلى الكشوفات الرسمية'
+                          : 'جلب درجات أعمال السنة إلى الكشوفات الرسمية',
                       icon: Icons.sync_alt,
                       onTap: _openFetchGradesScreen,
-                      backgroundColor: const Color(0xFFB18A62),
+                      backgroundColor: const Color(0xFF9A3412),
                     ),
                   ],
                 ),
@@ -278,18 +351,18 @@ class _HomeScreenState extends State<HomeScreen> {
     Color backgroundColor = const Color(0xFF718B79),
   }) {
     return Container(
-      height: 70,
+      height: 82,
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Color.lerp(backgroundColor, Colors.white, 0.18)!,
+            backgroundColor,
             backgroundColor,
           ],
         ),
         borderRadius: BorderRadius.circular(19),
-        border: Border.all(color: Colors.white.withOpacity(0.65), width: 1),
+        border: Border.all(color: const Color(0xFF0F172A), width: 1.4),
         boxShadow: const [
           BoxShadow(
             color: Color(0x18000000),
@@ -309,15 +382,15 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 19),
               child: Row(
                 children: [
-                  Icon(icon, color: Colors.white, size: 29),
+                  Icon(icon, color: Colors.white, size: 32),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Text(
                       title,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
                       ),
                       textAlign: TextAlign.right,
                     ),
