@@ -47,6 +47,33 @@ class ExamMakerApp extends StatelessWidget {
           foregroundColor: Colors.white,
           elevation: 2,
         ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF123B67),
+            foregroundColor: Colors.white,
+            minimumSize: const Size.fromHeight(52),
+            textStyle: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFF123B67),
+            side: const BorderSide(color: Color(0xFF123B67), width: 1.5),
+            textStyle: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF123B67),
+            textStyle: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+        ),
       ),
       home: isInitialAccessGranted ? const HomeScreen() : const ActivationScreen(),
     );
