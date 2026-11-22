@@ -32,7 +32,7 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
   Future<void> _loadLastExcelFile() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final String? lastFile = prefs.getString('last_excel_file');
+      final String? lastFile = prefs.getString('last_official_excel_file');
       if (lastFile != null && await File(lastFile).exists()) {
         _excelPath = lastFile;
         await _loadExcel();
@@ -68,14 +68,14 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['xlsx', 'xls', 'xlsm', 'xlsb'],
+        allowedExtensions: ['xlsx'],
       );
 
       if (result != null && result.files.single.path != null) {
         _excelPath = result.files.single.path!;
         // حفظ المسار في SharedPreferences
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('last_excel_file', _excelPath!);
+        await prefs.setString('last_official_excel_file', _excelPath!);
         await _loadExcel();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -98,7 +98,10 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
       _excelInstance = px.Excel.decodeBytes(bytes);
       
       // استهداف ورقة statment حصراً
-      final sheet = _excelInstance!.tables['statment'] ?? _excelInstance!.tables.values.first;
+      final sheet = _excelInstance!.tables['statment'];
+      if (sheet == null) {
+        throw Exception('الملف المحدد لا يحتوي على ورقة statment للكشوفات الرسمية.');
+      }
 
       _studentMap.clear();
 
