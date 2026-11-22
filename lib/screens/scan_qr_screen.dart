@@ -5,6 +5,7 @@ import 'package:excel/excel.dart' as px;
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/qr_scanner_service.dart';
 
 class ScanQRScreen extends StatefulWidget {
   const ScanQRScreen({super.key});
@@ -158,7 +159,8 @@ class _ScanQRScreenState extends State<ScanQRScreen> {
     final String? code = capture.barcodes.first.rawValue;
     if (code == null || code.isEmpty) return;
 
-    final String cleanCode = code.trim();
+    final String cleanCode = QRScannerService.extractSecretCode(code);
+    if (!QRScannerService.isValidQRCode(cleanCode)) return;
 
     // إيقاف الكاميرا بعد المسح
     _cameraController.stop();
