@@ -53,6 +53,7 @@ class MainActivity : FlutterActivity() {
                 val subjectCode = (arguments["subjectCode"] as? Number)?.toInt() ?: 1
                 val cropTopFraction = (arguments["cropTopFraction"] as? Number)?.toFloat() ?: 0f
                 val cropBottomFraction = (arguments["cropBottomFraction"] as? Number)?.toFloat() ?: 0f
+                val studentDataOnLastPage = arguments["studentDataOnLastPage"] as? Boolean ?: false
 
                 if (sourcePath.isNullOrBlank() || outputPath.isNullOrBlank()) {
                     result.error("INVALID_ARGUMENT", "مسار ملف PDF غير صالح.", null)
@@ -67,7 +68,8 @@ class MainActivity : FlutterActivity() {
                             students = students,
                             subjectCode = subjectCode,
                             cropTopFraction = cropTopFraction,
-                            cropBottomFraction = cropBottomFraction
+                            cropBottomFraction = cropBottomFraction,
+                            studentDataOnLastPage = studentDataOnLastPage
                         )
                         Handler(Looper.getMainLooper()).post {
                             result.success(outputPath)
@@ -87,7 +89,8 @@ class MainActivity : FlutterActivity() {
         students: List<Map<String, String>>,
         subjectCode: Int,
         cropTopFraction: Float,
-        cropBottomFraction: Float
+        cropBottomFraction: Float,
+        studentDataOnLastPage: Boolean
     ) {
         PDFBoxResourceLoader.init(applicationContext)
 
@@ -112,6 +115,7 @@ class MainActivity : FlutterActivity() {
                     if (students.isEmpty()) listOf(emptyMap()) else students
 
                 for (student in copies) {
+                    val studentDataPageIndex = if (studentDataOnLastPage) source.numberOfPages - 1 else 0
                     for (pageIndex in 0 until source.numberOfPages) {
                         val sourcePage = source.getPage(pageIndex)
                         val form = sourceForms[pageIndex]
@@ -120,7 +124,7 @@ class MainActivity : FlutterActivity() {
 
                         val pageWidth = PDRectangle.A4.width
                         val pageHeight = PDRectangle.A4.height
-                        val hasStudentData = !student["seatNo"].isNullOrBlank() && pageIndex == 0
+                        val hasStudentData = !student["seatNo"].isNullOrBlank() && pageIndex == studentDataPageIndex
 
                         // Reserve 1 cm for the student header and 3 cm for the QR/grade footer.
                         val topReserve = if (hasStudentData) 28.35f else 0f
@@ -133,7 +137,7 @@ class MainActivity : FlutterActivity() {
                         val sourceWidth = box.width.coerceAtLeast(1f)
                         val sourceHeight = box.height.coerceAtLeast(1f)
                         PDPageContentStream(output, page).use { stream ->
-                            if (pageIndex == 0) {
+                            if (pageIndex == 0 && !studentDataOnLastPage) {
                                 // Crop and stretch only the first page into the space
                                 // between the student header and the QR/grade footer.
                                 val safeTopFraction = cropTopFraction.coerceIn(0f, 0.99f)
