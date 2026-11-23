@@ -34,6 +34,7 @@ class _DocumentHubScreenState extends State<DocumentHubScreen> {
   double _cropTopFraction = 0.0;
   double _cropBottomFraction = 0.0;
   bool _cropConfigured = false;
+  bool _studentDataOnLastPage = false;
   PdfControllerPinch? _pdfController;
   FluentDocument? _wordDocument;
   final TextEditingController _subjectController =
@@ -227,6 +228,7 @@ class _DocumentHubScreenState extends State<DocumentHubScreen> {
       _subjectController.text = selectedSetup.subject;
       _gradeController.text = selectedSetup.grade;
       _examTitleController.text = selectedSetup.period;
+      _studentDataOnLastPage = selectedSetup.placeOnLastPage;
     });
     await _createStudentPdf();
   }
@@ -289,6 +291,7 @@ class _DocumentHubScreenState extends State<DocumentHubScreen> {
         'subjectCode': excelResult?.subjectCode ?? 1,
         'cropTopFraction': _cropConfigured ? _cropTopFraction : 0.0,
         'cropBottomFraction': _cropConfigured ? _cropBottomFraction : 0.0,
+        'studentDataOnLastPage': _studentDataOnLastPage,
       });
 
       if (generatedPath == null || !await File(generatedPath).exists()) {
@@ -316,7 +319,7 @@ class _DocumentHubScreenState extends State<DocumentHubScreen> {
       _showMessage(
         excelResult == null
             ? 'تم تجهيز صفحات PDF بمقاس A4 مع الاحتفاظ بالمحتوى الأصلي.'
-            : 'تم تجهيز ${excelResult.students.length} نسخة باسم $outputName، مع بيانات الطلاب في الصفحة الأولى لكل نسخة.',
+            : 'تم تجهيز ${excelResult.students.length} نسخة باسم $outputName، مع بيانات الطلاب في ${_studentDataOnLastPage ? 'الصفحة الأخيرة' : 'الصفحة الأولى'} لكل نسخة.',
       );
     } catch (e) {
       _showMessage('تعذرت معالجة ملف PDF: $e', isError: true);
@@ -682,7 +685,8 @@ class StudentSetup {
   final String subject;
   final String grade;
   final String period;
-  const StudentSetup({required this.excelPath, required this.subject, required this.grade, required this.period});
+  final bool placeOnLastPage;
+  const StudentSetup({required this.excelPath, required this.subject, required this.grade, required this.period, required this.placeOnLastPage});
 }
 
 class _StudentSetupDialog extends StatefulWidget {
@@ -697,6 +701,7 @@ class _StudentSetupDialogState extends State<_StudentSetupDialog> {
   String? _excelPath, _subject, _grade, _period;
   List<String> _subjects = [], _grades = [], _periods = [];
   bool _loading = false;
+  bool _placeOnLastPage = false;
   String? _error;
 
   Future<void> _chooseExcel() async {
@@ -767,15 +772,43 @@ class _StudentSetupDialogState extends State<_StudentSetupDialog> {
               _dropdown(label: widget.isOfficial ? '٤ - نوع الدرجة' : '٤ - الشهر أو الاختبار', value: _period, values: _periods, onChanged: _subject == null ? null : (v) => setState(() => _period = v)),
               if (_loading) ...[const SizedBox(height: 12), const LinearProgressIndicator(), const SizedBox(height: 6), const Text('جارٍ قراءة بيانات ملف Excel...')],
               if (_error != null) ...[const SizedBox(height: 10), Text(_error!, style: const TextStyle(color: Colors.red))],
-              const SizedBox(height: 12),
-              const Text('سيتم إنشاء نسخة لكل طالب، وتظهر بياناته ورقم جلوسه ورمز QR وكود المادة في الصفحة الأولى فقط.', style: TextStyle(fontSize: 12, color: Color(0xFF777568))),
+              const SizedBox(height: 14),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text('موضع بيانات الطالب', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF344E41))),
+              ),
+              RadioListTile<bool>(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                value: false,
+                groupValue: _placeOnLastPage,
+                onChanged: _loading ? null : (value) => setState(() => _placeOnLastPage = value ?? false),
+                title: const Text('الاختبار الشامل أو العادي'),
+                subtitle: const Text('إدراج بيانات الطالب في الصفحة الأولى.'),
+              ),
+              RadioListTile<bool>(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                value: true,
+                groupValue: _placeOnLastPage,
+                onChanged: _loading ? null : (value) => setState(() => _placeOnLastPage = value ?? true),
+                title: const Text('اختبار الأتمتة'),
+                subtitle: const Text('إدراج بيانات الطالب في الصفحة الأخيرة، لتظهر على ورقة التظليل.'),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _placeOnLastPage
+                    ? 'ستظهر بيانات الطالب ورقم جلوسه ورمز QR وكود المادة ومستطيل الدرجة في الصفحة الأخيرة فقط.'
+                    : 'ستظهر بيانات الطالب ورقم جلوسه ورمز QR وكود المادة ومستطيل الدرجة في الصفحة الأولى فقط.',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF777568)),
+              ),
             ]),
           ),
         ),
         actions: [
           TextButton(onPressed: _loading ? null : () => Navigator.pop(context), child: const Text('إلغاء')),
           FilledButton(
-            onPressed: _loading || _excelPath == null || _subject == null || _grade == null || _period == null ? null : () => Navigator.pop(context, StudentSetup(excelPath: _excelPath!, subject: _subject!, grade: _grade!, period: _period!)),
+            onPressed: _loading || _excelPath == null || _subject == null || _grade == null || _period == null ? null : () => Navigator.pop(context, StudentSetup(excelPath: _excelPath!, subject: _subject!, grade: _grade!, period: _period!, placeOnLastPage: _placeOnLastPage)),
             child: const Text('إنشاء نسخ الطلاب'),
           ),
         ],
