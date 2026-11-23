@@ -137,7 +137,7 @@ class MainActivity : FlutterActivity() {
                         val sourceWidth = box.width.coerceAtLeast(1f)
                         val sourceHeight = box.height.coerceAtLeast(1f)
                         PDPageContentStream(output, page).use { stream ->
-                            if (pageIndex == 0 && !studentDataOnLastPage) {
+                            if (pageIndex == 0) {
                                 // Crop and stretch only the first page into the space
                                 // between the student header and the QR/grade footer.
                                 val safeTopFraction = cropTopFraction.coerceIn(0f, 0.99f)
