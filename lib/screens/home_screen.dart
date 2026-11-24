@@ -243,7 +243,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     _buildMainActionButton(
                       title: _isOfficialMode
                           ? 'جلب المحصلات م١ وم٢ إلى الكشوفات الرسمية'
-                          : 'جلب درجات أعمال السنة إلى الكشوفات الرسمية',
+                          : 'تصدير درجات المحصلات والإختبارات الفصلية إلى الكشوفات الرسمية',
                       icon: Icons.sync_alt,
                       onTap: _openFetchGradesScreen,
                       backgroundColor: const Color(0xFF9A3412),
