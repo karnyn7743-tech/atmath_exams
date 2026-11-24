@@ -120,14 +120,14 @@ Map<String, dynamic> _getStudentGradesIsolate(Map<String, dynamic> args) {
     final sheet = excel.tables[sheetName];
     if (sheet == null) return {'error': 'ورقة العمل غير موجودة.'};
 
-    final wanted = selectedMonth.replaceAll(RegExp(r'\\s+'), '');
+    final wanted = selectedMonth.replaceAll(RegExp(r'\s+'), '');
     var targetCol = -1;
     var col = 4;
     while (col < 500) {
       final value = sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 1)).value;
       final text = value?.toString().trim() ?? '';
       if (text.isNotEmpty) {
-        final clean = text.replaceAll(RegExp(r'\\s+'), '');
+        final clean = text.replaceAll(RegExp(r'\s+'), '');
         if (clean == wanted) {
           targetCol = col;
           break;
