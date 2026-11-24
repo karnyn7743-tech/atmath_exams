@@ -107,6 +107,62 @@ Map<String, dynamic> _getMonthsAndStudentsIsolate(Map<String, dynamic> args) {
   };
 }
 
+
+/// قراءة درجات الطالب المسجلة مسبقاً في أعمدة الواجبات والشفهي والمواظبة.
+Map<String, dynamic> _getStudentGradesIsolate(Map<String, dynamic> args) {
+  final String filePath = args['filePath'];
+  final String sheetName = args['sheetName'];
+  final int targetRow = args['targetRow'];
+  final String selectedMonth = args['selectedMonth'];
+
+  try {
+    final excel = Excel.decodeBytes(File(filePath).readAsBytesSync());
+    final sheet = excel.tables[sheetName];
+    if (sheet == null) return {'error': 'ورقة العمل غير موجودة.'};
+
+    final wanted = selectedMonth.replaceAll(RegExp(r'\\s+'), '');
+    var targetCol = -1;
+    var col = 4;
+    while (col < 500) {
+      final value = sheet.cell(CellIndex.indexByColumnRow(columnIndex: col, rowIndex: 1)).value;
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty) {
+        final clean = text.replaceAll(RegExp(r'\\s+'), '');
+        if (clean == wanted) {
+          targetCol = col;
+          break;
+        }
+        if (_isMahsala1(clean) || _isFasl1(clean) ||
+            _isMahsala2(clean) || _isFasl2(clean)) {
+          col++;
+        } else {
+          col += 5;
+        }
+      } else {
+        col++;
+      }
+    }
+
+    if (targetCol < 0) return {'error': 'تعذر تحديد أعمدة الفترة المختارة.'};
+
+    String readGrade(int column) {
+      final value = sheet.cell(CellIndex.indexByColumnRow(
+        columnIndex: column,
+        rowIndex: targetRow,
+      )).value;
+      return value?.toString().trim() ?? '';
+    }
+
+    return {
+      'hw': readGrade(targetCol),
+      'oral': readGrade(targetCol + 1),
+      'att': readGrade(targetCol + 2),
+    };
+  } catch (e) {
+    return {'error': 'تعذر قراءة درجات الطالب: $e'};
+  }
+}
+
 const String _manualRelNs = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
 
 String _manualZipPath(String p) {
@@ -489,20 +545,65 @@ class _ManualGradeEntryScreenState extends State<ManualGradeEntryScreen> {
   }
 
   void _onNameChanged(String val) {
+    if (_selectedGrade != null) return;
     setState(() {
+      _hwController.clear();
+      _oralController.clear();
+      _attController.clear();
       if (val.trim().isEmpty) {
         _showSuggestions = false;
         _selectedStudentRow = null;
       } else {
         _showSuggestions = true;
         _filteredStudents = _allStudents.where((s) {
-          final gradeMatch = _selectedGrade == null || _selectedGrade!.isEmpty || s['grade'] == _selectedGrade;
           final nameMatch = s['name'].toString().contains(val.trim());
-          return gradeMatch && nameMatch;
+          return nameMatch;
         }).toList();
         _selectedStudentRow = null;
       }
     });
+  }
+
+  Future<void> _selectStudent(Map<String, dynamic> student) async {
+    final int row = student['row'] as int;
+    setState(() {
+      _studentNameController.text = student['name'].toString();
+      _selectedStudentRow = row;
+      _showSuggestions = false;
+      _filteredStudents = [];
+      _hwController.clear();
+      _oralController.clear();
+      _attController.clear();
+      _isLoading = true;
+    });
+
+    try {
+      if (_excelFilePath != null &&
+          _selectedSheet != null &&
+          _selectedMonthOrSubject != null) {
+        final result = await compute(_getStudentGradesIsolate, {
+          'filePath': _excelFilePath!,
+          'sheetName': _selectedSheet!,
+          'targetRow': row,
+          'selectedMonth': _selectedMonthOrSubject!,
+        });
+        if (mounted && _selectedStudentRow == row) {
+          if (!result.containsKey('error')) {
+            setState(() {
+              _hwController.text = result['hw']?.toString() ?? '';
+              _oralController.text = result['oral']?.toString() ?? '';
+              _attController.text = result['att']?.toString() ?? '';
+            });
+          } else {
+            _showSnack('⚠️ ${result['error']}');
+          }
+        }
+      }
+    } catch (e) {
+      if (mounted) _showSnack('⚠️ تعذر تحميل الدرجات السابقة: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _saveGrades() async {
@@ -535,6 +636,8 @@ class _ManualGradeEntryScreenState extends State<ManualGradeEntryScreen> {
       return;
     }
 
+    Map<String, dynamic>? nextStudent;
+    bool completedSequentialEntry = false;
     setState(() => _isLoading = true);
 
     try {
@@ -549,14 +652,29 @@ class _ManualGradeEntryScreenState extends State<ManualGradeEntryScreen> {
       });
 
       if (result['success'] == true) {
-        // ✅ تفريغ الحقول بعد الحفظ مباشرة
+        if (_selectedGrade != null) {
+          final classStudents = _allStudents
+              .where((student) => student['grade'] == _selectedGrade)
+              .toList();
+          final currentIndex = classStudents.indexWhere(
+            (student) => student['row'] == _selectedStudentRow,
+          );
+          if (currentIndex >= 0 && currentIndex + 1 < classStudents.length) {
+            nextStudent = classStudents[currentIndex + 1];
+          } else {
+            completedSequentialEntry = currentIndex >= 0;
+          }
+        }
+
         setState(() {
-          _studentNameController.clear();
           _hwController.clear();
           _oralController.clear();
           _attController.clear();
-          _selectedStudentRow = null;
-          _showSuggestions = false;
+          if (nextStudent == null) {
+            _studentNameController.clear();
+            _selectedStudentRow = null;
+            _showSuggestions = false;
+          }
         });
         _showSnack('✅ تم حفظ درجات أعمال السنة بنجاح');
       } else {
@@ -566,6 +684,13 @@ class _ManualGradeEntryScreenState extends State<ManualGradeEntryScreen> {
       _showSnack('❌ خطأ أثناء الحفظ: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+
+    if (!mounted) return;
+    if (nextStudent != null) {
+      await _selectStudent(nextStudent!);
+    } else if (completedSequentialEntry) {
+      _showSnack('🎉 اكتمل إدخال درجات جميع طلاب الصف $_selectedGrade');
     }
   }
 
@@ -709,7 +834,18 @@ class _ManualGradeEntryScreenState extends State<ManualGradeEntryScreen> {
                   items: _excelLoaded
                       ? _monthsList.map((m) => DropdownMenuItem(value: m, child: Text(m, style: const TextStyle(fontWeight: FontWeight.bold)))).toList()
                       : null,
-                  onChanged: (_excelLoaded && !_isLoading) ? (v) => setState(() => _selectedMonthOrSubject = v) : null,
+                  onChanged: (_excelLoaded && !_isLoading)
+                      ? (v) async {
+                          setState(() => _selectedMonthOrSubject = v);
+                          if (v != null && _selectedStudentRow != null) {
+                            final student = _allStudents.firstWhere(
+                              (s) => s['row'] == _selectedStudentRow,
+                              orElse: () => <String, dynamic>{},
+                            );
+                            if (student.isNotEmpty) await _selectStudent(student);
+                          }
+                        }
+                      : null,
                 ),
               ),
             ),
@@ -725,15 +861,41 @@ class _ManualGradeEntryScreenState extends State<ManualGradeEntryScreen> {
                   value: _selectedGrade,
                   isExpanded: true,
                   hint: Text(_excelLoaded ? 'اختر الصف (أو اتركه فارغاً للكل)' : 'يرجى اختيار ملف الأكسيل أولاً', style: TextStyle(color: _excelLoaded ? Colors.black54 : Colors.grey)),
-                  items: _excelLoaded ? _gradesList.map((g) => DropdownMenuItem(value: g, child: Text(g, style: const TextStyle(fontWeight: FontWeight.bold)))).toList() : null,
+                  items: _excelLoaded
+                      ? [
+                          const DropdownMenuItem<String>(
+                            value: '',
+                            child: Text('بدون تحديد الصف - البحث اليدوي'),
+                          ),
+                          ..._gradesList.map((g) => DropdownMenuItem(
+                                value: g,
+                                child: Text(g, style: const TextStyle(fontWeight: FontWeight.bold)),
+                              )),
+                        ]
+                      : null,
                   onChanged: (_excelLoaded && !_isLoading)
-                      ? (v) {
+                      ? (v) async {
+                          final grade = (v == null || v.isEmpty) ? null : v;
                           setState(() {
-                            _selectedGrade = v;
+                            _selectedGrade = grade;
                             _studentNameController.clear();
                             _selectedStudentRow = null;
                             _showSuggestions = false;
+                            _filteredStudents = [];
+                            _hwController.clear();
+                            _oralController.clear();
+                            _attController.clear();
                           });
+                          if (grade != null) {
+                            final classStudents = _allStudents
+                                .where((student) => student['grade'] == grade)
+                                .toList();
+                            if (classStudents.isNotEmpty) {
+                              await _selectStudent(classStudents.first);
+                            } else {
+                              _showSnack('لا يوجد طلاب مسجلون في الصف المحدد.');
+                            }
+                          }
                         }
                       : null,
                 ),
@@ -746,9 +908,12 @@ class _ManualGradeEntryScreenState extends State<ManualGradeEntryScreen> {
             TextField(
               controller: _studentNameController,
               enabled: _excelLoaded && !_isLoading,
-              onChanged: _onNameChanged,
+              readOnly: _selectedGrade != null,
+              onChanged: _selectedGrade == null ? _onNameChanged : null,
               decoration: InputDecoration(
-                hintText: 'اكتب اسم الطالب...',
+                hintText: _selectedGrade != null
+                    ? 'يظهر اسم الطالب التالي تلقائياً بعد الحفظ'
+                    : 'اكتب اسم الطالب...',
                 filled: true,
                 fillColor: Colors.white,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -770,13 +935,7 @@ class _ManualGradeEntryScreenState extends State<ManualGradeEntryScreen> {
                     final s = _filteredStudents[index];
                     return ListTile(
                       title: Text('${s['name']} (${s['seat']})'),
-                      onTap: () {
-                        setState(() {
-                          _studentNameController.text = s['name'];
-                          _selectedStudentRow = s['row'];
-                          _showSuggestions = false;
-                        });
-                      },
+                      onTap: () => _selectStudent(s),
                     );
                   },
                 ),
