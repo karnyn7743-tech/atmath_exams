@@ -1330,7 +1330,7 @@ class _FetchGradesScreenState extends State<FetchGradesScreen> {
       backgroundColor: const Color(0xFFF1F8E9),
       appBar: AppBar(
         title: const Text(
-          'جلب درجات المحصلات',
+          'جلب درجات المحصلات والإختبارات الفصلية',
           style: TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 16,
