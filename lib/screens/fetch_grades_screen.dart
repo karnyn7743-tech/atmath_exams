@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -8,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:xml/xml.dart';
+import '../services/excel_file_access_service.dart';
 
 // ═══════════════════════════════════════════════════════════
 // أدوات توحيد النصوص والأرقام قبل المطابقة
@@ -739,34 +741,13 @@ Uint8List _rebuildCleanXlsxArchive(
 // ═══════════════════════════════════════════════════════════
 
 Map<String, dynamic> _fetchGradesIsolate(Map<String, dynamic> args) {
-  final String targetPath = args['targetPath'];
-  final String sourcePath = args['sourcePath'];
+  final Uint8List targetBytes = args['targetBytes'] as Uint8List;
+  final Uint8List sourceBytes = args['sourceBytes'] as Uint8List;
   final String subjectName = args['subjectName'].toString().trim();
   final String semesterName = args['semesterName'].toString().trim();
 
   try {
-    final targetFile = File(targetPath);
-    final sourceFile = File(sourcePath);
-
-    if (!targetFile.existsSync() || !sourceFile.existsSync()) {
-      return {
-        'success': false,
-        'message': 'تعذر العثور على أحد الملفين في مسار التخزين.',
-      };
-    }
-
-    if (!targetPath.toLowerCase().endsWith('.xlsx') ||
-        !sourcePath.toLowerCase().endsWith('.xlsx')) {
-      return {
-        'success': false,
-        'message': 'يجب أن يكون الملفان بصيغة XLSX.',
-      };
-    }
-
-    // قراءة ملف أعمال السنة في الذاكرة فقط (Read-Only) دون أي مساس بالملف على القرص
-    final sourceBytes = sourceFile.readAsBytesSync();
-    final targetBytes = targetFile.readAsBytesSync();
-
+    // المصدر للقراءة فقط، والهدف يعاد حفظ بايتاته في مرجع المستند الأصلي.
     final sourceArchive = ZipDecoder().decodeBytes(sourceBytes);
     final targetArchive = ZipDecoder().decodeBytes(targetBytes);
 
@@ -953,20 +934,13 @@ Map<String, dynamic> _fetchGradesIsolate(Map<String, dynamic> args) {
       updatedXmlString,
     );
 
-    // الكتابة الذرية (Atomic Write) في ملف الأتمتة فقط
-    final tempOutput = File('$targetPath.tmp');
-    tempOutput.writeAsBytesSync(finalXlsxBytes, flush: true);
-    if (targetFile.existsSync()) {
-      targetFile.deleteSync();
-    }
-    tempOutput.renameSync(targetPath);
-
     return {
       'success': true,
       'count': updatedCount,
       'unmatched': unmatchedCount,
       'firstRow': firstFoundStudentRow,
       'sourceCount': gradesMap.length,
+      'updatedBytes': finalXlsxBytes,
     };
   } catch (e) {
     return {
@@ -1004,80 +978,19 @@ class _FetchGradesScreenState extends State<FetchGradesScreen> {
   // تحديد مجلد العمل لملف الأتمتة
   // ═════════════════════════════════════════════════════════
 
-  Future<Directory> _getGradesDirectory() async {
-    final externalDir = await getExternalStorageDirectory();
-
-    if (externalDir == null) {
-      throw Exception('تعذر الوصول إلى التخزين الداخلي.');
-    }
-
-    final paths = externalDir.path.split('/');
-    final baseParts = <String>[];
-
-    for (final part in paths) {
-      if (part == 'Android') break;
-      if (part.isNotEmpty) baseParts.add(part);
-    }
-
-    final basePath = '/${baseParts.join('/')}';
-
-    final targetDir = Directory(
-      '$basePath/Download/درجات الطلاب',
-    );
-
-    if (!await targetDir.exists()) {
-      await targetDir.create(recursive: true);
-    }
-
-    return targetDir;
-  }
-
-  // ═════════════════════════════════════════════════════════
-  // نسخ ملف الأتمتة فقط إلى مجلد العمل الدائم
-  // ═════════════════════════════════════════════════════════
-
-  Future<String> _copyTargetToPermanent(
-    String cachePath,
-    String originalName,
-  ) async {
-    final targetDir = await _getGradesDirectory();
-    final destination = File('${targetDir.path}/$originalName');
-
-    // إذا كان الملف موجوداً مسبقاً في مجلد العمل ويحتوي على درجات سابقة تم جلبها،
-    // نتحقق هل المستخدم اختاره من مجلد العمل نفسه أم يريد العمل على النسخة المحدثة
-    if (File(cachePath).parent.path == targetDir.path) {
-      return cachePath;
-    }
-
-    await destination.writeAsBytes(
-      await File(cachePath).readAsBytes(),
-      flush: true,
-    );
-
-    return destination.path;
-  }
-
-  // ═════════════════════════════════════════════════════════
-  // اختيار ملف الأتمتة والتحقق من هويته واستخراج المواد
-  // ═════════════════════════════════════════════════════════
-
   Future<void> _pickTargetFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['xlsx'],
-    );
-
-    if (result == null || result.files.single.path == null) return;
+    final selection = await ExcelFileAccessService.pickExcelDocument();
+    if (selection == null) return;
 
     setState(() => _isLoading = true);
 
     try {
-      final pickedPath = result.files.single.path!;
-      final fileName = result.files.single.name;
+      final pickedPath = selection.reference;
+      final fileName = selection.name;
 
-      // فحص الملف أولاً قبل نسخه للتأكد أنه ملف أتمتة وليس ملف أعمال السنة
+      // فحص ملف الأتمتة الأصلي مباشرة دون إنشاء نسخة.
       final checkArchive = ZipDecoder().decodeBytes(
-        await File(pickedPath).readAsBytes(),
+        await ExcelFileAccessService.readBytes(pickedPath),
       );
 
       final String sheetPath;
@@ -1117,15 +1030,10 @@ class _FetchGradesScreenState extends State<FetchGradesScreen> {
         throw Exception('لم يتم العثور على مواد دراسية في الصف الثالث من ملف الأتمتة.');
       }
 
-      final permanentPath = await _copyTargetToPermanent(
-        pickedPath,
-        fileName,
-      );
-
       if (!mounted) return;
 
       setState(() {
-        _targetPath = permanentPath;
+        _targetPath = pickedPath;
         _targetName = fileName;
         _subjects = tempSubjects;
         _selectedSubject = _subjects.isNotEmpty ? _subjects.first : null;
@@ -1159,22 +1067,18 @@ class _FetchGradesScreenState extends State<FetchGradesScreen> {
   // ═════════════════════════════════════════════════════════
 
   Future<void> _pickSourceFile() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['xlsx'],
-    );
-
-    if (result == null || result.files.single.path == null) return;
+    final selection = await ExcelFileAccessService.pickExcelDocument();
+    if (selection == null) return;
 
     setState(() => _isLoading = true);
 
     try {
-      final pickedPath = result.files.single.path!;
-      final fileName = result.files.single.name;
+      final pickedPath = selection.reference;
+      final fileName = selection.name;
 
-      // التحقق من أن الملف المختار هو ملف أعمال السنة وليس ملف الأتمتة
+      // التحقق من أن ملف أعمال السنة هو المصدر، دون نسخه أو تعديله.
       final checkArchive = ZipDecoder().decodeBytes(
-        await File(pickedPath).readAsBytes(),
+        await ExcelFileAccessService.readBytes(pickedPath),
       );
 
       final workbook = _readXml(checkArchive, 'xl/workbook.xml');
@@ -1259,11 +1163,13 @@ class _FetchGradesScreenState extends State<FetchGradesScreen> {
     setState(() => _isLoading = true);
 
     try {
+      final targetBytes = await ExcelFileAccessService.readBytes(_targetPath!);
+      final sourceBytes = await ExcelFileAccessService.readBytes(_sourcePath!);
       final result = await compute(
         _fetchGradesIsolate,
         {
-          'targetPath': _targetPath,
-          'sourcePath': _sourcePath,
+          'targetBytes': targetBytes,
+          'sourceBytes': sourceBytes,
           'subjectName': _selectedSubject,
           'semesterName': _selectedSemester,
         },
@@ -1273,6 +1179,13 @@ class _FetchGradesScreenState extends State<FetchGradesScreen> {
 
       if (result['success'] == true) {
         final count = result['count'] ?? 0;
+        if (count > 0) {
+          final updatedBytes = result['updatedBytes'] as Uint8List?;
+          if (updatedBytes == null || updatedBytes.isEmpty) {
+            throw Exception('لم تُرجع عملية الترحيل بيانات ملف الأتمتة المعدل.');
+          }
+          await ExcelFileAccessService.writeBytes(_targetPath!, updatedBytes);
+        }
 
         if (count == 0) {
           ScaffoldMessenger.of(context).showSnackBar(
