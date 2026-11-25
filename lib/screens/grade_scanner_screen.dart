@@ -703,8 +703,7 @@ class _GradeScannerScreenState extends State<GradeScannerScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final String? lastFile = prefs.getString('last_excel_file');
-      final normalizedLastFile = lastFile?.replaceAll('\\\\', '/');
-      final isLegacyCopy = normalizedLastFile?.contains('/Download/درجات الطلاب/') ?? false;
+      final isLegacyCopy = lastFile?.contains('/Download/درجات الطلاب/') ?? false;
       if (isLegacyCopy) {
         await prefs.remove('last_excel_file');
       }
