@@ -477,7 +477,6 @@ Map<String, dynamic> _getMonthsAndStudentsIsolate(Map<String, dynamic> args) {
   final String sheetName = args['sheetName'];
   final bool isTerm2 = args['isTerm2'];
 
-  final bytes = File(filePath).readAsBytesSync();
   final archive = ZipDecoder().decodeBytes(bytes);
   final sheetPath = _getWorksheetPath(archive, sheetName);
   final document = _readXml(archive, sheetPath);
