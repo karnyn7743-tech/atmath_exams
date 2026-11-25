@@ -15,6 +15,7 @@ import 'package:open_filex/open_filex.dart';
 import 'package:xml/xml.dart';
 import '../utils/permission_helper.dart';
 import '../services/excel_file_access_service.dart';
+import '../services/student_excel_service.dart';
 
 String _normalizeSecretCode(String value) {
   const digits = {
@@ -660,6 +661,7 @@ class _GradeScannerScreenState extends State<GradeScannerScreen> {
   String? _selectedMonthOrSubject;
 
   String _secretCode = '';
+  String _printedExamCode = '';
   final TextEditingController _gradeController = TextEditingController();
   int _totalStudentsCount = 0;
   int _scannedStudentsCount = 0;
@@ -876,6 +878,56 @@ class _GradeScannerScreenState extends State<GradeScannerScreen> {
     }
   }
 
+  Future<Uint8List?> _cropRegionBesideQr({
+    required img.Image fullImage,
+    required Rect qrRect,
+  }) async {
+    try {
+      if (qrRect.width < 4 || qrRect.height < 4) return null;
+      final gap = qrRect.width * 0.12;
+      final regionWidth = qrRect.width * 1.35;
+      final regionHeight = qrRect.height * 1.30;
+      final left = qrRect.right + gap;
+      final top = qrRect.center.dy - (regionHeight / 2);
+      final bounds = Rect.fromLTRB(
+        left.clamp(0.0, fullImage.width.toDouble()).toDouble(),
+        top.clamp(0.0, fullImage.height.toDouble()).toDouble(),
+        (left + regionWidth).clamp(0.0, fullImage.width.toDouble()).toDouble(),
+        (top + regionHeight).clamp(0.0, fullImage.height.toDouble()).toDouble(),
+      );
+      final x = bounds.left.floor();
+      final y = bounds.top.floor();
+      final width = bounds.width.floor();
+      final height = bounds.height.floor();
+      if (width < 8 || height < 8) return null;
+      var region = img.copyCrop(
+        fullImage,
+        x: x,
+        y: y,
+        width: width,
+        height: height,
+      );
+      region = _preprocessImageForOcr(region);
+      return Uint8List.fromList(img.encodePng(region));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<int?> _expectedPrintedExamCode() async {
+    final path = _excelFilePath;
+    final sheetName = _selectedSheet;
+    if (path == null || sheetName == null) return null;
+    final subjects = await StudentExcelService.getSubjectSheetNames(path);
+    final index = subjects.indexOf(sheetName);
+    return index < 0 ? null : index + 1;
+  }
+
+  bool get _isFinalTermSelected =>
+      _selectedMonthOrSubject != null &&
+      (_isFasl1(_selectedMonthOrSubject!) ||
+          _isFasl2(_selectedMonthOrSubject!));
+
   Future<String> _ocrFromBytes(Uint8List bytes) async {
     File? tempFile;
     Directory? tempDir;
@@ -912,10 +964,27 @@ class _GradeScannerScreenState extends State<GradeScannerScreen> {
       return;
     }
 
-    final double? gradeVal = double.tryParse(_gradeController.text.trim());
+    final double? gradeVal = double.tryParse(_convertArabicHindiDigits(_gradeController.text.trim()));
     if (gradeVal == null) {
       _showSnack('⚠️ الدرجة غير صحيحة');
       return;
+    }
+
+    if (_isFinalTermSelected && _printedExamCode.isNotEmpty) {
+      try {
+        final expectedCode = await _expectedPrintedExamCode();
+        final detectedCode =
+            int.tryParse(_convertArabicHindiDigits(_printedExamCode));
+        if (expectedCode != null && detectedCode != expectedCode) {
+          _showSnack(
+            'كود المادة المقروء ($detectedCode) لا يطابق ترتيب المادة المختارة؛ المتوقع ($expectedCode).',
+          );
+          return;
+        }
+      } catch (e) {
+        _showSnack('تعذر التحقق من كود المادة: $e');
+        return;
+      }
     }
 
     setState(() => _isLoading = true);
@@ -939,6 +1008,7 @@ class _GradeScannerScreenState extends State<GradeScannerScreen> {
         setState(() {
           _scannedStudentsCount++;
           _secretCode = '';
+          _printedExamCode = '';
           _gradeController.clear();
         });
         _showSnack(
@@ -990,21 +1060,65 @@ class _GradeScannerScreenState extends State<GradeScannerScreen> {
 
     setState(() {
       _secretCode = qrValue;
+      _printedExamCode = '';
       _gradeController.clear();
     });
 
     if (capture.image != null) {
       final leftBytes = await _cropLeftRegion(capture.image!);
-      if (leftBytes != null) {
-        final leftText = await _ocrFromBytes(leftBytes);
-        final gradeText = _extractNumber(leftText);
+      final gradeText = leftBytes == null
+          ? ''
+          : _extractNumber(await _ocrFromBytes(leftBytes));
 
-        if (gradeText.isNotEmpty) {
-          setState(() => _gradeController.text = gradeText);
-          _showSnack('✅ درجة مقروءة: $gradeText');
-        } else {
-          _showSnack('ℹ️ لم يتم التعرف على الدرجة، أدخلها يدوياً');
+      String printedCode = '';
+      // لا تتم قراءة كود الورقة في الاختبارات الشهرية.
+      if (_isFinalTermSelected) {
+        final fullImage = img.decodeImage(capture.image!);
+        final barcode = capture.barcodes.first;
+        final corners = barcode.corners;
+        if (fullImage != null &&
+            corners.length >= 4 &&
+            capture.size.width > 0 &&
+            capture.size.height > 0) {
+          final oriented = img.bakeOrientation(fullImage);
+          final scaleX = oriented.width / capture.size.width;
+          final scaleY = oriented.height / capture.size.height;
+          final xs = corners.map((point) => point.dx * scaleX).toList();
+          final ys = corners.map((point) => point.dy * scaleY).toList();
+          final qrRect = Rect.fromLTRB(
+            xs.reduce(math.min),
+            ys.reduce(math.min),
+            xs.reduce(math.max),
+            ys.reduce(math.max),
+          );
+          final rightBytes = await _cropRegionBesideQr(
+            fullImage: oriented,
+            qrRect: qrRect,
+          );
+          if (rightBytes != null) {
+            printedCode = _extractNumber(await _ocrFromBytes(rightBytes));
+          }
         }
+      }
+
+      if (mounted) {
+        setState(() {
+          if (gradeText.isNotEmpty) _gradeController.text = gradeText;
+          _printedExamCode = printedCode.isEmpty
+              ? ''
+              : (int.tryParse(_convertArabicHindiDigits(printedCode))?.toString() ??
+                  printedCode);
+        });
+      }
+
+      if (gradeText.isNotEmpty && _isFinalTermSelected) {
+        _showSnack(printedCode.isNotEmpty
+            ? 'تمت قراءة الدرجة ($gradeText) وكود المادة ($printedCode).'
+            : 'قُرئت الدرجة ($gradeText)، لكن تعذر قراءة كود المادة.');
+      } else if (gradeText.isNotEmpty) {
+        _showSnack('✅ درجة مقروءة: $gradeText');
+      } else {
+        _showSnack('ℹ️ لم يتم التعرف على الدرجة، أدخلها يدوياً');
       }
     } else {
       _showSnack('⚠️ لم يتم التقاط صورة');
@@ -1301,6 +1415,30 @@ class _GradeScannerScreenState extends State<GradeScannerScreen> {
             ),
             const SizedBox(height: 10),
 
+            if (_isFinalTermSelected)
+              Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.teal.shade300),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('كود المادة المقروء: ',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    Text(
+                      _printedExamCode.isEmpty ? 'لم يُقرأ بعد' : _printedExamCode,
+                      style: const TextStyle(
+                        color: Color(0xFF0F766E),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             Row(
               children: [
                 Expanded(
