@@ -835,16 +835,25 @@ class _GradeScannerScreenState extends State<GradeScannerScreen> {
         final pixel = processed.getPixel(x, y);
         final num r = pixel.r, g = pixel.g, b = pixel.b;
         final luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-        final isRedInk = r > 100 && (r - g) > 50 && (r - b) > 50;
-        final isBlueInk = b > 100 && (b - r) > 50 && (b - g) > 50;
-        final isBlackInk = luminance < 100;
-
-        if (isRedInk || isBlueInk || isBlackInk) {
-          processed.setPixelRgb(x, y, 0, 0, 0);
-        }
+        final isRedInk = r > 100 && (r - g) > 35 && (r - b) > 35;
+        final isBlueInk = b > 100 && (b - r) > 35 && (b - g) > 35;
+        // رفع حد الحساسية لالتقاط قلم الرصاص والحبر الخفيف، لا الحبر الداكن فقط.
+        final isPencilOrDarkInk = luminance < 185;
+        processed.setPixelRgb(
+          x,
+          y,
+          (isRedInk || isBlueInk || isPencilOrDarkInk) ? 0 : 255,
+          (isRedInk || isBlueInk || isPencilOrDarkInk) ? 0 : 255,
+          (isRedInk || isBlueInk || isPencilOrDarkInk) ? 0 : 255,
+        );
       }
     }
-    return processed;
+    // تكبير المنطقة قبل التعرف حتى تظهر تفاصيل الأرقام المكتوبة بخط اليد.
+    return img.copyResize(
+      processed,
+      width: processed.width * 2,
+      height: processed.height * 2,
+    );
   }
 
   Future<Uint8List?> _cropLeftRegion(Uint8List bytes) async {
