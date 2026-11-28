@@ -687,6 +687,39 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
     return match?.group(0) ?? '';
   }
 
+  String _normalizeSecretCode(String value) {
+    var normalized = _convertArabicHindiDigits(value)
+        .replaceAll(RegExp(r'[\u200B-\u200F\u061C\uFEFF\u00A0\u00AD]'), '')
+        .trim()
+        .replaceAll(RegExp(r'\s+'), '');
+    if (normalized.endsWith('.0')) {
+      normalized = normalized.substring(0, normalized.length - 2);
+    }
+    return normalized;
+  }
+
+  Future<int> _countOfficialSecretMatches(String secretCode) async {
+    if (_selectedFilePath == null) return 0;
+    final wanted = _normalizeSecretCode(secretCode);
+    if (wanted.isEmpty) return 0;
+    final bytes = await File(_selectedFilePath!).readAsBytes();
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final sheetPath = _getWorksheetPath(archive, 'statment');
+    final document = _readXml(archive, sheetPath);
+    final sharedStrings = _readSharedStrings(archive);
+    final rows = _getRows(document);
+    final maxRow = rows.keys.isEmpty ? 0 : rows.keys.reduce((a, b) => a > b ? a : b);
+    int matches = 0;
+    for (int row = 5; row <= maxRow; row++) {
+      final value = _getValueAt(rows, 3, row, sharedStrings);
+      if (value != null && _normalizeSecretCode(value.toString()) == wanted) {
+        matches++;
+        if (matches > 1) break;
+      }
+    }
+    return matches;
+  }
+
   /// معالجة مسبقة تعزز وضوح الخط الأحمر والتباين البصري للأرقام المكتوبة يدوياً
   img.Image _preprocessImageForOcr(img.Image src) {
     final processed = img.Image.from(src);
@@ -760,83 +793,104 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
   }
 
   Future<void> _processCapturedImage(BarcodeCapture capture) async {
-    if (capture.barcodes.isEmpty || capture.barcodes.first.rawValue == null) {
-      return;
-    }
-
-    final String qrValue = capture.barcodes.first.rawValue!;
+    if (capture.barcodes.isEmpty || capture.barcodes.first.rawValue == null) return;
+    final String qrValue = capture.barcodes.first.rawValue!.trim();
+    if (qrValue.isEmpty) return;
 
     await _cameraController.stop();
-
-    setState(() {
-      _secretIdResult = qrValue;
-      _gradeController.clear();
-    });
-
-    if (capture.image == null) {
-      _showSnackBar("⚠️ لم يتم التقاط الصورة، حاول مجدداً");
-      return;
-    }
-
-    final regions = await _cropImageRegions(capture.image!, capture.size);
-    if (regions == null) {
-      _showSnackBar("⚠️ فشل في قص الصورة");
-      return;
-    }
-
-    String subjectCode = '';
-    if (regions.rightRegion != null) {
-      final rightText = await _recognizeTextFromBytes(regions.rightRegion!);
-      subjectCode = _extractNumber(rightText);
-      debugPrint('📚 رقم المادة المقروء: $subjectCode (النص الأصلي: $rightText)');
-    }
-
-    String gradeText = '';
-    if (regions.leftRegion != null) {
-      final leftText = await _recognizeTextFromBytes(regions.leftRegion!);
-      gradeText = _extractNumber(leftText);
-      debugPrint('⭐ الدرجة المقروءة: $gradeText (النص الأصلي: $leftText)');
-    }
-
-    if (_selectedSubject == null) {
-      _showSnackBar("⚠️ يرجى اختيار المادة أولاً");
-      if (_isScanningActive) await _cameraController.start();
-      return;
-    }
-
-    int currentSubjectIndex = _subjects.indexOf(_selectedSubject!) + 1;
-
-    if (subjectCode.isEmpty) {
-      _showDialogAlert(
-        title: "⚠️ تعذر قراءة كود المادة",
-        message:
-            "لم يتم التعرف على كود المادة في يمين الورقة. تأكد من وضوح الرقم ($currentSubjectIndex).",
-        shouldCloseCamera: false,
-      );
-      return;
-    }
-
-    if (subjectCode != currentSubjectIndex.toString()) {
-      _showDialogAlert(
-        title: "⚠️ تنبيه: عدم تطابق المادة",
-        message:
-            "رقم المادة المقروء في الورقة ($subjectCode) لا يطابق المادة المختارة (${_selectedSubject} - رقم $currentSubjectIndex)\n\nتم إيقاف العملية لحماية الكنترول.",
-        shouldCloseCamera: true,
-      );
-      return;
-    }
-
-    if (gradeText.isNotEmpty) {
+    if (mounted) {
       setState(() {
-        _gradeController.text = gradeText;
+        _secretIdResult = "سيظهر هنا الرقم السري";
+        _gradeController.clear();
       });
-      _showSnackBar("✅ تم قراءة الدرجة: $gradeText");
-    } else {
-      _showSnackBar("ℹ️ لم يتم التعرف على الدرجة، أدخلها يدوياً");
     }
 
-    if (_isScanningActive) {
-      await _cameraController.start();
+    try {
+      if (capture.image == null) {
+        _showSnackBar("لم يتم التقاط الصورة، حاول مجدداً.");
+        return;
+      }
+      final regions = await _cropImageRegions(capture.image!, capture.size);
+      if (regions == null) {
+        _showSnackBar("فشل في قص مناطق الورقة.");
+        return;
+      }
+
+      // أولاً: كود المادة يحدد ورقة المادة ومجموعة أعمدة الفصل.
+      final rightText = regions.rightRegion == null
+          ? ''
+          : await _recognizeTextFromBytes(regions.rightRegion!);
+      final subjectCode = _extractNumber(rightText);
+      final subjectNumber = int.tryParse(subjectCode);
+      if (subjectNumber == null || subjectNumber < 1 || subjectNumber > _subjects.length) {
+        await _cameraController.stop();
+        if (mounted) setState(() => _isScanningActive = false);
+        _showDialogAlert(
+          title: "تعذر تحديد المادة",
+          message: subjectCode.isEmpty
+              ? "لم يتم التعرف على كود المادة في الورقة. لا يمكن متابعة المسح."
+              : "كود المادة المقروء ($subjectCode) غير موجود ضمن مواد الكشف الرسمي.",
+          shouldCloseCamera: true,
+        );
+        return;
+      }
+
+      final detectedSubject = _subjects[subjectNumber - 1];
+      final baseCol = _subjectBaseColumns[detectedSubject];
+      if (baseCol == null) {
+        await _cameraController.stop();
+        if (mounted) setState(() => _isScanningActive = false);
+        _showDialogAlert(
+          title: "تعذر تحديد عمود المادة",
+          message: "تعذر تحديد مجموعة أعمدة المادة ($detectedSubject) في ورقة statment.",
+          shouldCloseCamera: true,
+        );
+        return;
+      }
+      final targetCol = baseCol + (_selectedSemester == 1 ? 1 : 3);
+      if (mounted) setState(() => _selectedSubject = detectedSubject);
+      await _updateGradedCount();
+      debugPrint('تم تحديد المادة ' + detectedSubject + ' والعمود ' + _columnLetters(targetCol) + '.');
+
+      // ثانياً: التحقق من الرقم السري قبل قراءة الدرجة.
+      final secretMatches = await _countOfficialSecretMatches(qrValue);
+      if (secretMatches != 1) {
+        await _cameraController.stop();
+        if (mounted) {
+          setState(() {
+            _isScanningActive = false;
+            _secretIdResult = "سيظهر هنا الرقم السري";
+            _gradeController.clear();
+          });
+        }
+        final message = secretMatches == 0
+            ? "لا يوجد رقم سري لهذا الطالب في العمود D بكشف statment. راجع بيانات الطالب أو أعد توليد الرقم السري."
+            : "الرقم السري لهذا الطالب مكرر في كشف statment. تم إيقاف العملية منعاً لترحيل الدرجة إلى طالب غير محدد.";
+        _showDialogAlert(
+          title: "لا يمكن متابعة الرصد",
+          message: message,
+          shouldCloseCamera: true,
+        );
+        return;
+      }
+
+      if (mounted) setState(() => _secretIdResult = _normalizeSecretCode(qrValue));
+
+      // ثالثاً: قراءة الدرجة بعد نجاح التحقق من الرقم السري فقط.
+      final leftText = regions.leftRegion == null
+          ? ''
+          : await _recognizeTextFromBytes(regions.leftRegion!);
+      final gradeText = _extractNumber(leftText);
+      if (gradeText.isNotEmpty) {
+        if (mounted) setState(() => _gradeController.text = gradeText);
+        _showSnackBar("تم التحقق من الرقم السري وقراءة الدرجة: $gradeText");
+      } else {
+        _showSnackBar("تم التحقق من الرقم السري، لكن تعذر التعرف على الدرجة. يمكنك إدخالها يدوياً.");
+      }
+    } catch (e) {
+      _showSnackBar("تعذر إكمال عملية المسح: $e");
+    } finally {
+      if (mounted && _isScanningActive) await _cameraController.start();
     }
   }
 
@@ -880,12 +934,12 @@ class _GradeEntryScreenState extends State<GradeEntryScreen> {
       int targetCol = baseCol + (_selectedSemester == 1 ? 1 : 3);
 
       int? matchedRowIndex;
-      final wantedSecret = _secretIdResult.trim();
+      final wantedSecret = _normalizeSecretCode(_secretIdResult);
 
       // البحث عن الرقم السري في العمود D (columnIndex = 3) بدءاً من الصف 6 (rowIndex = 5)
       for (int rowIndex = 5; rowIndex <= maxRow; rowIndex++) {
         var cellD = _getValueAt(rows, 3, rowIndex, sharedStrings);
-        if (cellD != null && cellD.toString().trim() == wantedSecret) {
+        if (cellD != null && _normalizeSecretCode(cellD.toString()) == wantedSecret) {
           matchedRowIndex = rowIndex;
           break;
         }
